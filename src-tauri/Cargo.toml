@@ -1,0 +1,26 @@
+[package]
+name = "modelhub-windows"
+version = "0.1.0"
+description = "Windows desktop app for managing local AI models"
+authors = ["Anantha Kattani"]
+edition = "2021"
+rust-version = "1.77"
+
+[lib]
+name = "modelhub_windows_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+anyhow = "1"
+reqwest = { version = "0.12", features = ["blocking", "json"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tauri = { version = "2", features = ["tray-icon"] }
+thiserror = "2"
+trash = "5"
+
+[dev-dependencies]
+tempfile = "3"
