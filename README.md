@@ -21,7 +21,7 @@ This repository is an early Windows MVP built with Tauri, React, TypeScript, and
 
 ## Current Status
 
-Version `0.1.0` is a source-first MVP/prototype. It is suitable for local development, demo review, and early feedback, but it is not a signed production installer yet.
+Version `0.1.1` is the first installable Windows preview. It is suitable for local development, demo review, and trusted early users, but it is signed with a self-signed certificate rather than a publicly trusted code-signing certificate.
 
 Implemented so far:
 
@@ -40,14 +40,30 @@ Implemented so far:
 - Settings UI for model paths, tray behavior, scanning, symlink attempts, and safe deletion defaults.
 - Local system information collection for CPU, memory, GPU, and cache disk context.
 
-Known gaps before a public end-user release:
+Known gaps before a broader public end-user release:
 
-- Windows installer/signing/release packaging is not finalized.
+- The installer is self-signed. Windows SmartScreen or browser warnings may still appear.
 - LM Studio server runtime check is still a placeholder; folder scanning works.
 - Hugging Face token storage is not enabled yet, so private/gated models are reported clearly but cannot be downloaded.
 - Pause/resume controls are intentionally disabled until HTTP range resume is implemented.
 - Custom folder scanning is represented in settings and types, but the scanner still needs full implementation.
 - UI polish and broader Windows hardware testing are still in progress.
+
+## Install Preview Build
+
+Download the latest Windows installer from the GitHub Releases page:
+
+```text
+https://github.com/anantha99/ModelHub/releases
+```
+
+The `0.1.1` preview installer targets Windows 10/11 x64 and installs for the current user, so it should not require administrator access.
+
+Because this preview uses a self-signed certificate, Windows may show SmartScreen or Unknown Publisher warnings. The checksum and certificate thumbprint published with the GitHub release help detect corruption or accidental asset mismatches, but they are not an independent trust anchor by themselves. For stronger trust, verify the certificate thumbprint through a separate channel before running the installer.
+
+The installer uses Tauri's WebView2 download bootstrapper. If Microsoft Edge WebView2 Runtime is missing, the installer may request network access and show Microsoft's WebView2 installer prompt.
+
+After launch, closing the main window hides it to the system tray by default. Use the tray menu and choose Quit to fully exit the app.
 
 ## Demo Flow
 
@@ -124,11 +140,23 @@ cargo clippy -- -D warnings
 cargo test
 ```
 
-Build the Tauri app:
+Build the Tauri app and NSIS installer:
 
 ```bash
-pnpm tauri build
+pnpm release:windows
 ```
+
+Installer artifacts are written under `src-tauri/target/release/bundle/nsis/`.
+
+The release script builds the NSIS installer, signs packaged executables through Tauri's Windows `signCommand`, signs the final installer, exports the public certificate, and writes release upload notes.
+
+To regenerate only the signing/checksum notes after a successful build:
+
+```bash
+pnpm release:windows:sign
+```
+
+The signing script creates or reuses a `CurrentUser\My` code-signing certificate, exports the public `.cer` file beside the installer, and writes checksum/thumbprint notes for the GitHub Release. It does not commit private key material.
 
 ## Windows Paths
 
@@ -171,6 +199,10 @@ http://localhost:1234/v1
 This is an independent Windows prototype inspired by ModelHub. It does not claim official affiliation with Conscious Engines or the original ModelHub project.
 
 ## Release Notes
+
+### 0.1.1
+
+First installable Windows preview release with a current-user NSIS installer, release metadata, MIT licensing, and a repeatable self-signed Authenticode signing script for preview artifacts.
 
 ### 0.1.0
 

@@ -1,6 +1,6 @@
 {
   "name": "modelhub-windows",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "type": "module",
   "packageManager": "pnpm@10.12.1",
@@ -8,6 +8,8 @@
     "dev": "vite --host 127.0.0.1 --port 1420",
     "build": "tsc && vite build",
     "preview": "vite preview",
+    "release:windows": "tauri build --bundles nsis && pnpm release:windows:sign",
+    "release:windows:sign": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File src-tauri/scripts/sign-windows-preview.ps1",
     "tauri": "tauri"
   },
   "dependencies": {
