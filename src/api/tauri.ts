@@ -13,6 +13,7 @@ import type {
   ResolvedPaths,
   ScanResult,
   StartDownloadInput,
+  SystemInfo,
 } from "./types";
 
 type CommandArgs = Record<string, unknown>;
@@ -44,6 +45,10 @@ export function scanModels(): Promise<ScanResult> {
 
 export function getOllamaRuntimeStatus(): Promise<OllamaRuntimeStatus> {
   return invokeCommand<OllamaRuntimeStatus>("get_ollama_runtime_status");
+}
+
+export function getSystemInfo(): Promise<SystemInfo> {
+  return invokeCommand<SystemInfo>("get_system_info");
 }
 
 export function searchHfModels(input: HfSearchInput): Promise<HfSearchResult> {

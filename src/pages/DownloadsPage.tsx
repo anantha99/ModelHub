@@ -3,30 +3,14 @@ import { useEffect, useMemo, useState } from "react";
 import { cancelDownload, installDownload, listDownloads } from "../api/tauri";
 import type { DownloadJob, DownloadStatus } from "../api/types";
 import { EmptyState } from "../components/EmptyState";
+import { formatBytes } from "../utils/format";
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
-function formatBytes(value: number | null): string {
-  if (value === null) {
-    return "Unknown size";
-  }
-
-  if (value < 1024) {
-    return `${value} B`;
-  }
-
-  const units = ["KB", "MB", "GB", "TB"];
-  let size = value / 1024;
-  let unitIndex = 0;
-
-  while (size >= 1024 && unitIndex < units.length - 1) {
-    size /= 1024;
-    unitIndex += 1;
-  }
-
-  return `${size.toFixed(size >= 10 ? 1 : 2)} ${units[unitIndex]}`;
+function formatDownloadBytes(value: number | null): string {
+  return formatBytes(value, "Unknown size");
 }
 
 function formatJobTime(value: string): string {
@@ -52,6 +36,14 @@ function progressPercent(job: DownloadJob): number | null {
   }
 
   return Math.min(100, Math.round((job.downloadedBytes / job.totalBytes) * 100));
+}
+
+function progressValueText(job: DownloadJob, percent: number | null): string {
+  if (percent === null) {
+    return `Downloaded ${formatDownloadBytes(job.downloadedBytes)} of an unknown total`;
+  }
+
+  return `Downloaded ${formatDownloadBytes(job.downloadedBytes)} of ${formatDownloadBytes(job.totalBytes)} (${percent}%)`;
 }
 
 export function DownloadsPage() {
@@ -126,12 +118,20 @@ export function DownloadsPage() {
     });
   }
 
-  async function cancelJob(jobId: string) {
-    setCancellingJobId(jobId);
+  async function cancelJob(job: DownloadJob) {
+    const confirmed = window.confirm(
+      `Cancel download for “${job.repoId}”? Partial files may be discarded.`,
+    );
+
+    if (!confirmed) {
+      return;
+    }
+
+    setCancellingJobId(job.id);
     setCancelError(null);
 
     try {
-      await cancelDownload(jobId);
+      await cancelDownload(job.id);
     } catch (cancelDownloadError) {
       setCancelError(errorMessage(cancelDownloadError));
     } finally {
@@ -175,21 +175,21 @@ export function DownloadsPage() {
       </header>
 
       {error ? (
-        <section className="status-banner" data-tone="error">
+        <section aria-atomic="true" aria-live="polite" className="status-banner" data-tone="error">
           <strong>Downloads failed</strong>
           <span>{error}</span>
         </section>
       ) : null}
 
       {cancelError ? (
-        <section className="status-banner" data-tone="error">
+        <section aria-atomic="true" aria-live="polite" className="status-banner" data-tone="error">
           <strong>Cancel failed</strong>
           <span>{cancelError}</span>
         </section>
       ) : null}
 
       {installError ? (
-        <section className="status-banner" data-tone="error">
+        <section aria-atomic="true" aria-live="polite" className="status-banner" data-tone="error">
           <strong>Install failed</strong>
           <span>{installError}</span>
         </section>
@@ -209,7 +209,7 @@ export function DownloadsPage() {
               installing={installingJobId === job.id}
               job={job}
               key={job.id}
-              onCancel={() => void cancelJob(job.id)}
+              onCancel={() => void cancelJob(job)}
               onInstall={() => void installJob(job.id)}
             />
           ))}
@@ -260,11 +260,19 @@ function DownloadJobCard({
       <div className="download-progress-block">
         <div className="download-progress-meta">
           <span>
-            {formatBytes(job.downloadedBytes)} / {formatBytes(job.totalBytes)}
+            {formatDownloadBytes(job.downloadedBytes)} / {formatDownloadBytes(job.totalBytes)}
           </span>
           <span>{percent === null ? "Size unknown" : `${percent}%`}</span>
         </div>
-        <div className="download-progress-track" aria-label="Download progress">
+        <div
+          aria-label="Download progress"
+          aria-valuemax={100}
+          aria-valuemin={0}
+          aria-valuenow={percent ?? undefined}
+          aria-valuetext={progressValueText(job, percent)}
+          className="download-progress-track"
+          role="progressbar"
+        >
           <span style={{ width: `${percent ?? 8}%` }} />
         </div>
       </div>
@@ -294,7 +302,7 @@ function DownloadJobCard({
             <span>
               <strong>{file.path}</strong>
               <small>
-                {formatBytes(file.downloadedBytes)} / {formatBytes(file.sizeBytes)}
+                {formatDownloadBytes(file.downloadedBytes)} / {formatDownloadBytes(file.sizeBytes)}
               </small>
               {file.stagedPath ? <small>{file.stagedPath}</small> : null}
               {file.error ? <small>{file.error}</small> : null}
@@ -305,13 +313,13 @@ function DownloadJobCard({
 
       {canCancel ? (
         <button className="danger-ghost-button" disabled={cancelling} onClick={onCancel} type="button">
-          {cancelling ? "Cancelling..." : "Cancel download"}
+          {cancelling ? "Cancelling…" : "Cancel download"}
         </button>
       ) : null}
 
       {canInstall ? (
         <button className="primary-button" disabled={installing} onClick={onInstall} type="button">
-          {installing ? "Installing..." : "Install to HF cache"}
+          {installing ? "Installing…" : "Install to HF cache"}
         </button>
       ) : null}
     </article>

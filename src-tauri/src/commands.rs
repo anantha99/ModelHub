@@ -7,12 +7,13 @@ use crate::model_actions;
 use crate::models::{
     AppSettings, AppSettingsPatch, DeleteModelInput, DeleteResult, DownloadJob, HfModelDetails,
     HfSearchInput, HfSearchResult, InstallDownloadResult, OllamaRuntimeStatus, ResolvedPaths,
-    ScanResult, StartDownloadInput,
+    ScanResult, StartDownloadInput, SystemInfo,
 };
 use crate::paths;
 use crate::runtimes;
 use crate::scanner;
 use crate::settings::SettingsStore;
+use crate::system_info;
 
 #[tauri::command]
 pub fn get_settings(app: AppHandle) -> CommandResult<AppSettings> {
@@ -50,6 +51,18 @@ pub async fn get_ollama_runtime_status() -> CommandResult<OllamaRuntimeStatus> {
     tauri::async_runtime::spawn_blocking(runtimes::ollama::get_status)
         .await
         .map_err(|error| format!("Ollama runtime check failed to finish: {error}"))
+}
+
+#[tauri::command]
+pub async fn get_system_info(app: AppHandle) -> CommandResult<SystemInfo> {
+    let store = SettingsStore::for_manager(&app).map_err(into_command_error)?;
+    let settings = store.load().map_err(into_command_error)?;
+    let resolved_paths = paths::resolve_paths(&settings);
+    let hf_cache_path = resolved_paths.hf_cache.path;
+
+    tauri::async_runtime::spawn_blocking(move || system_info::collect_system_info(hf_cache_path))
+        .await
+        .map_err(|error| format!("System information check failed to finish: {error}"))
 }
 
 #[tauri::command]

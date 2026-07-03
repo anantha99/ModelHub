@@ -10,6 +10,7 @@ mod paths;
 mod runtimes;
 mod scanner;
 mod settings;
+mod system_info;
 mod tray;
 
 pub fn run() -> tauri::Result<()> {
@@ -20,6 +21,7 @@ pub fn run() -> tauri::Result<()> {
             commands::get_resolved_paths,
             commands::scan_models,
             commands::get_ollama_runtime_status,
+            commands::get_system_info,
             commands::search_hf_models,
             commands::get_hf_model_details,
             commands::start_download,

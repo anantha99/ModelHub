@@ -1,4 +1,5 @@
 import type { LocalModel, ModelFormat, ModelSource } from "../api/types";
+import { formatBytes, formatScanTimestamp } from "../utils/format";
 
 type ModelCardProps = {
   deleting: boolean;
@@ -36,6 +37,24 @@ export function ModelCard({
   const fileCount = model.files.length;
   const hasPath = model.path !== null;
   const canDelete = hasPath && model.source !== "ollama";
+  const metadataItems = [
+    isKnownFormat(model.format)
+      ? { label: "Format", value: formatModelFormat(model.format) }
+      : null,
+    hasUsefulMetadataValue(model.quantization)
+      ? { label: "Quant", value: model.quantization }
+      : null,
+    hasUsefulMetadataValue(model.parameterSize)
+      ? { label: "Params", value: model.parameterSize }
+      : null,
+    { label: "Files", value: `${fileCount} ${fileCount === 1 ? "file" : "files"}` },
+    hasKnownRuntimeStatus(model.runtimeStatus)
+      ? { label: "Runtime", value: formatRuntimeStatus(model.runtimeStatus) }
+      : null,
+    hasUsefulTimestamp(model.lastModified)
+      ? { label: "Modified", value: formatScanTimestamp(model.lastModified) }
+      : null,
+  ].filter((item): item is { label: string; value: string } => item !== null);
 
   return (
     <article className="model-card">
@@ -52,12 +71,9 @@ export function ModelCard({
       <p className="model-identity">{identity}</p>
 
       <dl className="model-meta-grid">
-        <MetaItem label="Format" value={formatModelFormat(model.format)} />
-        <MetaItem label="Quant" value={model.quantization ?? "Unknown"} />
-        <MetaItem label="Params" value={model.parameterSize ?? "Unknown"} />
-        <MetaItem label="Files" value={`${fileCount} ${fileCount === 1 ? "file" : "files"}`} />
-        <MetaItem label="Runtime" value={formatRuntimeStatus(model.runtimeStatus)} />
-        <MetaItem label="Modified" value={formatScanTimestamp(model.lastModified)} />
+        {metadataItems.map((item) => (
+          <MetaItem key={item.label} label={item.label} value={item.value} />
+        ))}
       </dl>
 
       {model.path ? <code className="model-path">{model.path}</code> : null}
@@ -83,7 +99,7 @@ export function ModelCard({
             onClick={() => onDelete(model)}
             type="button"
           >
-            {deleting ? "Deleting..." : "Delete"}
+            {deleting ? "Deleting…" : "Delete"}
           </button>
         ) : null}
       </div>
@@ -104,47 +120,28 @@ function formatModelFormat(format: ModelFormat | null): string {
   return format ? formatLabels[format] : "Unknown format";
 }
 
+function isKnownFormat(format: ModelFormat | null): boolean {
+  return format !== null && format !== "unknown";
+}
+
+function hasUsefulMetadataValue(value: string | null): value is string {
+  const normalizedValue = value?.trim().toLowerCase();
+
+  return Boolean(normalizedValue && normalizedValue !== "unknown");
+}
+
+function hasUsefulTimestamp(value: string | null): value is string {
+  return Boolean(value && value !== "0");
+}
+
+function hasKnownRuntimeStatus(status: LocalModel["runtimeStatus"]): boolean {
+  return Boolean(status && status !== "unknown");
+}
+
 function formatRuntimeStatus(status: LocalModel["runtimeStatus"]): string {
   if (!status) {
     return "Unknown";
   }
 
   return status.charAt(0).toUpperCase() + status.slice(1);
-}
-
-export function formatBytes(bytes: number | null): string {
-  if (bytes === null) {
-    return "Size unavailable";
-  }
-
-  if (bytes === 0) {
-    return "0 B";
-  }
-
-  const units = ["B", "KB", "MB", "GB", "TB"];
-  const unitIndex = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1);
-  const value = bytes / 1024 ** unitIndex;
-  const precision = value >= 10 || unitIndex === 0 ? 0 : 1;
-
-  return `${value.toFixed(precision)} ${units[unitIndex]}`;
-}
-
-export function formatScanTimestamp(value: string | null): string {
-  if (!value || value === "0") {
-    return "time unavailable";
-  }
-
-  const numericValue = Number(value);
-  const date = Number.isFinite(numericValue)
-    ? new Date(numericValue * 1000)
-    : new Date(value);
-
-  if (Number.isNaN(date.getTime())) {
-    return "time unavailable";
-  }
-
-  return new Intl.DateTimeFormat(undefined, {
-    dateStyle: "medium",
-    timeStyle: "short",
-  }).format(date);
 }

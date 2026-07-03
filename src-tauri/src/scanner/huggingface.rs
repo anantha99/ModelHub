@@ -5,6 +5,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use crate::models::{LocalModel, LocalModelFile, ModelFormat, ModelRuntimeStatus, ModelSource};
 
 use super::common::{detect_format, parse_quantization_from_name};
+use super::metadata::{read_gguf_metadata, read_hf_snapshot_metadata};
 
 const MODEL_CACHE_PREFIX: &str = "models--";
 
@@ -99,6 +100,25 @@ fn scan_repo_cache(repo_path: &Path, repo_id: &str) -> Result<Option<LocalModel>
     let quantization = primary_file
         .and_then(|file| file.quantization.clone())
         .or_else(|| files.iter().find_map(|file| file.quantization.clone()));
+    let mut metadata = read_hf_snapshot_metadata(&snapshot_path);
+
+    metadata.provenance.snapshot_sha = snapshot_path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .map(ToString::to_string);
+
+    if metadata.provenance.snapshot_sha.is_some() {
+        metadata.sources.push("hf_cache".to_string());
+    }
+
+    if let Some(primary_file) = primary_file.filter(|file| file.format == ModelFormat::Gguf) {
+        let gguf_path = snapshot_path.join(&primary_file.path);
+        if let Ok(gguf_metadata) = read_gguf_metadata(&gguf_path) {
+            metadata.merge(gguf_metadata);
+        }
+    }
+
+    let parameter_size = metadata.technical.parameter_size.clone();
     let size_bytes = calculate_blob_size(&repo_path.join("blobs"))
         .or_else(|| Some(files.iter().filter_map(|file| file.size_bytes).sum::<u64>()))
         .filter(|size| *size > 0);
@@ -114,10 +134,14 @@ fn scan_repo_cache(repo_path: &Path, repo_id: &str) -> Result<Option<LocalModel>
         size_bytes,
         format,
         quantization,
-        parameter_size: None,
+        parameter_size,
         last_modified,
         files,
         runtime_status: Some(ModelRuntimeStatus::Available),
+        technical: metadata.technical,
+        capabilities: metadata.capabilities,
+        provenance: metadata.provenance,
+        metadata_sources: metadata.sources,
     }))
 }
 
