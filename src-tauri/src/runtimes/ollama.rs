@@ -30,7 +30,10 @@ fn status_from_scan_result(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::models::{LocalModel, ModelFormat, ModelRuntimeStatus, ModelSource};
+    use crate::models::{
+        LocalModel, LocalModelCapabilities, LocalModelProvenance, LocalModelTechnical, ModelFormat,
+        ModelRuntimeStatus, ModelSource,
+    };
 
     #[test]
     fn running_status_includes_models() {
@@ -105,6 +108,10 @@ mod tests {
             last_modified: Some("2024-09-25T19:22:00Z".to_string()),
             files: Vec::new(),
             runtime_status: Some(ModelRuntimeStatus::Available),
+            technical: LocalModelTechnical::default(),
+            capabilities: LocalModelCapabilities::default(),
+            provenance: LocalModelProvenance::default(),
+            metadata_sources: Vec::new(),
         }
     }
 }

@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { SwitchField } from "../components/SwitchField";
 import { getResolvedPaths, getSettings, updateSettings } from "../api/tauri";
 import type {
   AppSettings,
@@ -16,6 +17,10 @@ type SettingsDraft = {
   enableSymlinkAttempt: boolean;
   scanOnStartup: boolean;
   deleteUsesRecycleBin: boolean;
+};
+
+type SettingsPageProps = {
+  onDirtyChange?: (hasUnsavedChanges: boolean) => void;
 };
 
 function settingsToDraft(settings: AppSettings): SettingsDraft {
@@ -70,7 +75,7 @@ async function fetchSettingsState(): Promise<{
   return { loadedSettings, loadedPaths };
 }
 
-export function SettingsPage() {
+export function SettingsPage({ onDirtyChange }: SettingsPageProps) {
   const [settings, setSettings] = useState<AppSettings | null>(null);
   const [draft, setDraft] = useState<SettingsDraft | null>(null);
   const [resolvedPaths, setResolvedPaths] = useState<ResolvedPaths | null>(null);
@@ -136,6 +141,33 @@ export function SettingsPage() {
     draft && settings && !draftsMatchSettings(draft, settings),
   );
   const pathIssueCount = resolvedPaths ? countPathIssues(resolvedPaths) : 0;
+
+  useEffect(() => {
+    onDirtyChange?.(hasUnsavedChanges);
+  }, [hasUnsavedChanges, onDirtyChange]);
+
+  useEffect(() => {
+    return () => {
+      onDirtyChange?.(false);
+    };
+  }, [onDirtyChange]);
+
+  useEffect(() => {
+    if (!hasUnsavedChanges) {
+      return;
+    }
+
+    function handleBeforeUnload(event: BeforeUnloadEvent) {
+      event.preventDefault();
+      event.returnValue = "";
+    }
+
+    window.addEventListener("beforeunload", handleBeforeUnload);
+
+    return () => {
+      window.removeEventListener("beforeunload", handleBeforeUnload);
+    };
+  }, [hasUnsavedChanges]);
 
   function updateDraft(patch: Partial<SettingsDraft>) {
     setDraft((current) => (current ? { ...current, ...patch } : current));
@@ -255,7 +287,7 @@ export function SettingsPage() {
             onClick={() => void saveSettings()}
             type="button"
           >
-            {isSaving ? "Saving..." : "Save Changes"}
+            {isSaving ? "Saving…" : "Save Changes"}
           </button>
         </div>
       </header>
@@ -292,9 +324,11 @@ export function SettingsPage() {
               </label>
               <input
                 className="text-input"
+                autoComplete="off"
                 id="hf-cache-path"
+                name="hfCachePath"
                 onChange={(event) => updateDraft({ hfCachePath: event.target.value })}
-                placeholder="Use HF_HUB_CACHE, HF_HOME, or default"
+                placeholder="Example: D:\\ModelHub\\hf-cache…"
                 value={draft.hfCachePath}
               />
               <p className="field-help">
@@ -309,11 +343,13 @@ export function SettingsPage() {
               </label>
               <input
                 className="text-input"
+                autoComplete="off"
                 id="lm-studio-path"
+                name="lmStudioModelsPath"
                 onChange={(event) =>
                   updateDraft({ lmStudioModelsPath: event.target.value })
                 }
-                placeholder="Use default .lmstudio models folder"
+                placeholder="Example: C:\\Users\\You\\.lmstudio\\models…"
                 value={draft.lmStudioModelsPath}
               />
               <p className="field-help">
@@ -335,7 +371,9 @@ export function SettingsPage() {
                     <div className="custom-folder-row" key={`${folder}-${index}`}>
                       <input
                         aria-label={`Custom folder ${index + 1}`}
+                        autoComplete="off"
                         className="text-input"
+                        name={`customModelFolder-${index + 1}`}
                         onChange={(event) => updateCustomFolder(index, event.target.value)}
                         value={folder}
                       />
@@ -356,9 +394,11 @@ export function SettingsPage() {
               <div className="custom-folder-row add-folder-row">
                 <input
                   className="text-input"
+                  autoComplete="off"
                   id="custom-folder-input"
+                  name="newCustomModelFolder"
                   onChange={(event) => setNewCustomFolder(event.target.value)}
-                  placeholder="D:\\Models\\GGUF"
+                  placeholder="Example: D:\\Models\\GGUF…"
                   value={newCustomFolder}
                 />
                 <button
@@ -421,45 +461,45 @@ export function SettingsPage() {
               <span className="soft-pill">MVP-safe defaults</span>
             </div>
 
-            <div className="toggle-grid">
-              <ToggleRow
+            <div className="settings-control-grid">
+              <SwitchField
                 checked={draft.minimizeToTray}
                 description="Closing the window hides it and keeps the tray companion running."
                 label="Minimize to tray on close"
+                name="minimizeToTray"
                 onChange={(value) => updateDraft({ minimizeToTray: value })}
               />
-              <ToggleRow
+              <SwitchField
                 checked={draft.scanOnStartup}
                 description="Let the Local page refresh sources automatically when scanning lands."
                 label="Scan on startup"
+                name="scanOnStartup"
                 onChange={(value) => updateDraft({ scanOnStartup: value })}
               />
-              <ToggleRow
+              <SwitchField
                 checked={draft.enableSymlinkAttempt}
                 description="Try HF snapshot symlinks first, then copy when Windows blocks symlink creation."
                 label="Attempt HF cache symlinks"
+                name="enableSymlinkAttempt"
                 onChange={(value) => updateDraft({ enableSymlinkAttempt: value })}
               />
-              <ToggleRow
-                checked={draft.deleteUsesRecycleBin}
+              <SettingStatusRow
                 description="Permanent delete is intentionally not exposed in the MVP."
-                disabled
                 label="Use Recycle Bin for deletes"
-                onChange={(value) => updateDraft({ deleteUsesRecycleBin: value })}
+                status={draft.deleteUsesRecycleBin ? "Locked on" : "Locked off"}
+                tone={draft.deleteUsesRecycleBin ? "enabled" : "muted"}
               />
-              <ToggleRow
-                checked={false}
+              <SettingStatusRow
                 description="Windows startup integration is post-MVP scope."
-                disabled
                 label="Start on login"
-                onChange={() => undefined}
+                status="Post-MVP"
+                tone="future"
               />
-              <ToggleRow
-                checked={false}
+              <SettingStatusRow
                 description="Telemetry is off and not implemented in this MVP."
-                disabled
                 label="Telemetry"
-                onChange={() => undefined}
+                status="Off"
+                tone="muted"
               />
             </div>
           </section>
@@ -477,7 +517,7 @@ export function SettingsPage() {
 
 function StatusBanner({ tone, message }: { tone: "error" | "success" | "warning"; message: string }) {
   return (
-    <section className="status-banner" data-tone={tone}>
+    <section aria-atomic="true" aria-live="polite" className="status-banner" data-tone={tone}>
       <strong>{toneLabel(tone)}</strong>
       <span>{message}</span>
     </section>
@@ -531,33 +571,25 @@ function IssueList({ issues }: { issues: PathIssue[] }) {
   );
 }
 
-function ToggleRow({
-  checked,
+function SettingStatusRow({
   description,
-  disabled = false,
   label,
-  onChange,
+  status,
+  tone,
 }: {
-  checked: boolean;
   description: string;
-  disabled?: boolean;
   label: string;
-  onChange: (checked: boolean) => void;
+  status: string;
+  tone: "enabled" | "future" | "muted";
 }) {
   return (
-    <label className="toggle-row" data-disabled={disabled}>
-      <span>
+    <article className="setting-status-row" data-tone={tone}>
+      <span className="setting-status-copy">
         <strong>{label}</strong>
         <small>{description}</small>
       </span>
-      <input
-        checked={checked}
-        disabled={disabled}
-        onChange={(event) => onChange(event.target.checked)}
-        role="switch"
-        type="checkbox"
-      />
-    </label>
+      <span className="setting-status-badge">{status}</span>
+    </article>
   );
 }
 

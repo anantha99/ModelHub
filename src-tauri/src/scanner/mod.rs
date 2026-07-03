@@ -1,6 +1,7 @@
 pub mod common;
 pub mod huggingface;
 pub mod lmstudio;
+pub mod metadata;
 pub mod ollama;
 
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -280,8 +281,8 @@ mod tests {
 
     use super::*;
     use crate::models::{
-        LocalModel, ModelFormat, ModelRuntimeStatus, PathResolutionSource, ResolvedPath,
-        ResolvedPaths,
+        LocalModel, LocalModelCapabilities, LocalModelProvenance, LocalModelTechnical, ModelFormat,
+        ModelRuntimeStatus, PathResolutionSource, ResolvedPath, ResolvedPaths,
     };
 
     #[test]
@@ -488,6 +489,10 @@ mod tests {
                 last_modified: Some("2024-09-25T19:22:00Z".to_string()),
                 files: Vec::new(),
                 runtime_status: Some(ModelRuntimeStatus::Available),
+                technical: LocalModelTechnical::default(),
+                capabilities: LocalModelCapabilities::default(),
+                provenance: LocalModelProvenance::default(),
+                metadata_sources: Vec::new(),
             }],
             status: SourceStatus {
                 source: ModelSource::Ollama,

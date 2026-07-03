@@ -93,6 +93,44 @@ export type LocalModel = {
   lastModified: string | null;
   files: LocalModelFile[];
   runtimeStatus: "available" | "loaded" | "running" | "unknown" | null;
+  technical: LocalModelTechnical;
+  capabilities: LocalModelCapabilities;
+  provenance: LocalModelProvenance;
+  metadataSources: string[];
+};
+
+export type LocalModelTechnical = {
+  architecture: string | null;
+  family: string | null;
+  families: string[];
+  parameterCount: number | null;
+  parameterSize: string | null;
+  contextLength: number | null;
+  maxContextLength: number | null;
+  embeddingLength: number | null;
+  blockCount: number | null;
+  attentionHeads: number | null;
+  kvHeads: number | null;
+  vocabSize: number | null;
+  tokenizer: string | null;
+};
+
+export type LocalModelCapabilities = {
+  vision: boolean | null;
+  embedding: boolean | null;
+  toolUse: boolean | null;
+  reasoning: boolean | null;
+};
+
+export type LocalModelProvenance = {
+  digest: string | null;
+  snapshotSha: string | null;
+  license: string | null;
+  tags: string[];
+  languages: string[];
+  datasets: string[];
+  baseModels: string[];
+  repoUrl: string | null;
 };
 
 export type DeleteModelInput = {
@@ -128,6 +166,37 @@ export type OllamaRuntimeStatus = {
   models: LocalModel[];
   error: string | null;
   checkedAt: string;
+};
+
+export type SystemInfo = {
+  cpu: CpuInfo | null;
+  memory: MemoryInfo;
+  gpus: GpuInfo[];
+  hfCacheDisk: DiskInfo | null;
+  collectedAt: string;
+};
+
+export type CpuInfo = {
+  name: string;
+  physicalCores: number | null;
+  logicalCores: number;
+};
+
+export type MemoryInfo = {
+  totalBytes: number;
+  availableBytes: number;
+};
+
+export type GpuInfo = {
+  name: string;
+  memoryBytes: number | null;
+};
+
+export type DiskInfo = {
+  name: string | null;
+  mountPoint: string;
+  totalBytes: number;
+  availableBytes: number;
 };
 
 export type HfSearchSort = "downloads" | "likes" | "last_modified";

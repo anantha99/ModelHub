@@ -1,5 +1,5 @@
 import { listen } from "@tauri-apps/api/event";
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { AppShell } from "./components/AppShell";
 import { DownloadsPage } from "./pages/DownloadsPage";
 import { ExplorePage } from "./pages/ExplorePage";
@@ -27,19 +27,43 @@ function isInstalledDownload(job: DownloadJob): boolean {
 function App() {
   const [activePage, setActivePage] = useState<AppPage>("local");
   const [localRefreshSignal, setLocalRefreshSignal] = useState(0);
+  const [settingsHasUnsavedChanges, setSettingsHasUnsavedChanges] = useState(false);
   const installedJobIds = useRef<Set<string>>(new Set());
+
+  const requestPageChange = useCallback(
+    (page: AppPage) => {
+      if (page === activePage) {
+        return;
+      }
+
+      if (activePage === "settings" && settingsHasUnsavedChanges) {
+        const confirmed = window.confirm(
+          "Leave Settings and discard unsaved changes?",
+        );
+
+        if (!confirmed) {
+          return;
+        }
+
+        setSettingsHasUnsavedChanges(false);
+      }
+
+      setActivePage(page);
+    },
+    [activePage, settingsHasUnsavedChanges],
+  );
 
   useEffect(() => {
     const unlisten = listen<unknown>("tray:navigate", (event) => {
       if (isTrayNavigatePayload(event.payload)) {
-        setActivePage(event.payload.page);
+        requestPageChange(event.payload.page);
       }
     });
 
     return () => {
       unlisten.then((cleanup) => cleanup());
     };
-  }, []);
+  }, [requestPageChange]);
 
   useEffect(() => {
     const unlisten = listen<DownloadJob>("download:updated", (event) => {
@@ -74,12 +98,12 @@ function App() {
       case "runtimes":
         return <RuntimesPage />;
       case "settings":
-        return <SettingsPage />;
+        return <SettingsPage onDirtyChange={setSettingsHasUnsavedChanges} />;
     }
   }
 
   return (
-    <AppShell activePage={activePage} onNavigate={setActivePage}>
+    <AppShell activePage={activePage} onNavigate={requestPageChange}>
       {renderPage()}
     </AppShell>
   );

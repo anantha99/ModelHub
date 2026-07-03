@@ -10,7 +10,7 @@ import type {
   HfSearchSort,
 } from "../api/types";
 import { EmptyState } from "../components/EmptyState";
-import { formatScanTimestamp } from "../components/ModelCard";
+import { formatBytes, formatCount, formatScanTimestamp } from "../utils/format";
 
 const defaultFilters: HfSearchFilters = {
   textGeneration: true,
@@ -26,31 +26,6 @@ const sortLabels: Record<HfSearchSort, string> = {
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
-}
-
-function formatCount(value: number | null): string {
-  return value === null ? "--" : new Intl.NumberFormat().format(value);
-}
-
-function formatBytes(value: number | null): string {
-  if (value === null) {
-    return "Unknown size";
-  }
-
-  if (value < 1024) {
-    return `${value} B`;
-  }
-
-  const units = ["KB", "MB", "GB", "TB"];
-  let size = value / 1024;
-  let unitIndex = 0;
-
-  while (size >= 1024 && unitIndex < units.length - 1) {
-    size /= 1024;
-    unitIndex += 1;
-  }
-
-  return `${size.toFixed(size >= 10 ? 1 : 2)} ${units[unitIndex]}`;
 }
 
 function formatTag(tag: string): string {
@@ -272,15 +247,17 @@ export function ExplorePage() {
           <label className="field-stack explore-query-field" htmlFor="hf-search-query">
             <span className="field-label">Model search</span>
             <input
+              autoComplete="off"
               className="text-input"
               id="hf-search-query"
+              name="hfSearchQuery"
               onChange={(event) => setQuery(event.target.value)}
               onKeyDown={(event) => {
                 if (event.key === "Enter") {
                   submitSearch();
                 }
               }}
-              placeholder="qwen, mistral, llama gguf..."
+              placeholder="e.g. qwen, mistral, llama gguf…"
               value={query}
             />
           </label>
@@ -288,8 +265,10 @@ export function ExplorePage() {
           <label className="field-stack explore-sort-field" htmlFor="hf-search-sort">
             <span className="field-label">Sort by</span>
             <select
+              autoComplete="off"
               className="text-input"
               id="hf-search-sort"
+              name="hfSearchSort"
               onChange={(event) => setSort(event.target.value as HfSearchSort)}
               value={sort}
             >
@@ -307,7 +286,7 @@ export function ExplorePage() {
             onClick={submitSearch}
             type="button"
           >
-            {isSearching ? "Searching..." : "Search"}
+            {isSearching ? "Searching…" : "Search"}
           </button>
         </div>
 
@@ -315,23 +294,26 @@ export function ExplorePage() {
           <FilterToggle
             checked={filters.textGeneration}
             label="Text generation"
+            name="textGenerationFilter"
             onChange={(checked) => updateFilter("textGeneration", checked)}
           />
           <FilterToggle
             checked={filters.gguf}
             label="GGUF"
+            name="ggufFilter"
             onChange={(checked) => updateFilter("gguf", checked)}
           />
           <FilterToggle
             checked={filters.safetensors}
             label="Safetensors"
+            name="safetensorsFilter"
             onChange={(checked) => updateFilter("safetensors", checked)}
           />
         </div>
       </section>
 
       {error ? (
-        <section className="status-banner" data-tone="error">
+        <section aria-atomic="true" aria-live="polite" className="status-banner" data-tone="error">
           <strong>Search failed</strong>
           <span>{error}</span>
           <button className="secondary-button" disabled={isSearching} onClick={retrySearch} type="button">
@@ -353,7 +335,7 @@ export function ExplorePage() {
               <div>
                 <p className="eyebrow">Results</p>
                 <h3>
-                  {result.models.length} repos for "{result.query}"
+                  {`${result.models.length} repos for “${result.query}”`}
                 </h3>
               </div>
               <span className="soft-pill">{sortLabels[sort]}</span>
@@ -389,7 +371,7 @@ export function ExplorePage() {
       ) : result ? (
         <EmptyState
           eyebrow="No results"
-          title={`No Hugging Face models found for "${result.query}"`}
+          title={`No Hugging Face models found for “${result.query}”`}
           description="Try a broader keyword or remove format filters. Public search works without a Hugging Face token."
         />
       ) : (
@@ -406,16 +388,20 @@ export function ExplorePage() {
 function FilterToggle({
   checked,
   label,
+  name,
   onChange,
 }: {
   checked: boolean;
   label: string;
+  name: string;
   onChange: (checked: boolean) => void;
 }) {
   return (
     <label className="explore-filter-toggle">
       <input
+        autoComplete="off"
         checked={checked}
+        name={name}
         onChange={(event) => onChange(event.target.checked)}
         type="checkbox"
       />
@@ -437,6 +423,7 @@ function HfResultCard({
 
   return (
     <button
+      aria-pressed={isSelected}
       className="hf-result-card"
       data-selected={isSelected}
       onClick={onSelect}
@@ -542,21 +529,21 @@ function HfSelectedModelPanel({
       </div>
 
       {detailsError ? (
-        <div className="status-banner" data-tone="error">
+        <div aria-atomic="true" aria-live="polite" className="status-banner" data-tone="error">
           <strong>Details failed</strong>
           <span>{detailsError}</span>
         </div>
       ) : null}
 
       {downloadMessage ? (
-        <div className="status-banner" data-tone="success">
+        <div aria-atomic="true" aria-live="polite" className="status-banner" data-tone="success">
           <strong>Download started</strong>
           <span>{downloadMessage}</span>
         </div>
       ) : null}
 
       {downloadError ? (
-        <div className="status-banner" data-tone="error">
+        <div aria-atomic="true" aria-live="polite" className="status-banner" data-tone="error">
           <strong>Download failed</strong>
           <span>{downloadError}</span>
         </div>
@@ -579,13 +566,13 @@ function HfSelectedModelPanel({
 
           <div className="download-selection-summary">
             <strong>{selectedFiles.length} selected</strong>
-            <span>{formatBytes(selectedBytes)}</span>
+            <span>{formatBytes(selectedBytes, "Unknown size")}</span>
           </div>
 
           {selectedBytes !== null && selectedBytes > 5 * 1024 * 1024 * 1024 ? (
-            <div className="status-banner" data-tone="warning">
+            <div aria-atomic="true" aria-live="polite" className="status-banner" data-tone="warning">
               <strong>Large download</strong>
-              <span>Selected files exceed 5 GB. Make sure you have disk space before continuing.</span>
+              <span>Selected files exceed 5&nbsp;GB. Make sure you have disk space before continuing.</span>
             </div>
           ) : null}
 
@@ -596,14 +583,16 @@ function HfSelectedModelPanel({
                 {group.files.map((file) => (
                   <label className="hf-file-row" key={file.path}>
                     <input
+                      autoComplete="off"
                       checked={selectedFilePaths.has(file.path)}
+                      name="hfFileSelection"
                       onChange={(event) => onFileSelectionChange(file.path, event.target.checked)}
                       type="checkbox"
                     />
                     <span>
                       <strong>{file.path}</strong>
                       <small>
-                        {formatBytes(file.sizeBytes)} / {file.format}
+                        {formatBytes(file.sizeBytes, "Unknown size")} / {file.format}
                         {file.lfs ? " / LFS" : ""}
                       </small>
                     </span>
@@ -619,7 +608,7 @@ function HfSelectedModelPanel({
             onClick={onStartDownload}
             type="button"
           >
-            {isStartingDownload ? "Starting..." : "Start download"}
+            {isStartingDownload ? "Starting…" : "Start download"}
           </button>
         </div>
       ) : null}

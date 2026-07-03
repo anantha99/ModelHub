@@ -11,8 +11,11 @@ type AppShellProps = {
 export function AppShell({ activePage, onNavigate, children }: AppShellProps) {
   return (
     <div className="app-shell">
+      <a className="skip-link" href="#main-content">
+        Skip to main content
+      </a>
       <Sidebar activePage={activePage} onNavigate={onNavigate} />
-      <main className="main-panel" aria-live="polite">
+      <main className="main-panel" id="main-content" tabIndex={-1}>
         {children}
       </main>
     </div>

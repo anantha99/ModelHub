@@ -254,6 +254,50 @@ pub struct LocalModel {
     pub last_modified: Option<String>,
     pub files: Vec<LocalModelFile>,
     pub runtime_status: Option<ModelRuntimeStatus>,
+    pub technical: LocalModelTechnical,
+    pub capabilities: LocalModelCapabilities,
+    pub provenance: LocalModelProvenance,
+    pub metadata_sources: Vec<String>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LocalModelTechnical {
+    pub architecture: Option<String>,
+    pub family: Option<String>,
+    pub families: Vec<String>,
+    pub parameter_count: Option<u64>,
+    pub parameter_size: Option<String>,
+    pub context_length: Option<u64>,
+    pub max_context_length: Option<u64>,
+    pub embedding_length: Option<u64>,
+    pub block_count: Option<u64>,
+    pub attention_heads: Option<u64>,
+    pub kv_heads: Option<u64>,
+    pub vocab_size: Option<u64>,
+    pub tokenizer: Option<String>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LocalModelCapabilities {
+    pub vision: Option<bool>,
+    pub embedding: Option<bool>,
+    pub tool_use: Option<bool>,
+    pub reasoning: Option<bool>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LocalModelProvenance {
+    pub digest: Option<String>,
+    pub snapshot_sha: Option<String>,
+    pub license: Option<String>,
+    pub tags: Vec<String>,
+    pub languages: Vec<String>,
+    pub datasets: Vec<String>,
+    pub base_models: Vec<String>,
+    pub repo_url: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -326,6 +370,47 @@ pub struct OllamaRuntimeStatus {
     pub models: Vec<LocalModel>,
     pub error: Option<String>,
     pub checked_at: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SystemInfo {
+    pub cpu: Option<CpuInfo>,
+    pub memory: MemoryInfo,
+    pub gpus: Vec<GpuInfo>,
+    pub hf_cache_disk: Option<DiskInfo>,
+    pub collected_at: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CpuInfo {
+    pub name: String,
+    pub physical_cores: Option<usize>,
+    pub logical_cores: usize,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MemoryInfo {
+    pub total_bytes: u64,
+    pub available_bytes: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GpuInfo {
+    pub name: String,
+    pub memory_bytes: Option<u64>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DiskInfo {
+    pub name: Option<String>,
+    pub mount_point: String,
+    pub total_bytes: u64,
+    pub available_bytes: u64,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]

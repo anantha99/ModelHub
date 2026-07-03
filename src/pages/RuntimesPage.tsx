@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { getOllamaRuntimeStatus } from "../api/tauri";
 import type { LocalModel, OllamaRuntimeStatus } from "../api/types";
-import { formatBytes, formatScanTimestamp } from "../components/ModelCard";
+import { formatBytes, formatScanTimestamp } from "../utils/format";
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
@@ -79,12 +79,12 @@ export function RuntimesPage() {
           onClick={() => void loadOllamaStatus("refresh")}
           type="button"
         >
-          {isRefreshing || isInitialLoading ? "Checking..." : "Refresh"}
+          {isRefreshing || isInitialLoading ? "Checking…" : "Refresh"}
         </button>
       </header>
 
       {error ? (
-        <section className="status-banner" data-tone="error">
+        <section aria-atomic="true" aria-live="polite" className="status-banner" data-tone="error">
           <strong>Runtime check failed</strong>
           <span>{error}</span>
           <button
@@ -159,7 +159,7 @@ function OllamaRuntimeCard({ status }: { status: OllamaRuntimeStatus | null }) {
       </dl>
 
       {status.error ? (
-        <section className="status-banner" data-tone={status.running ? "warning" : "info"}>
+        <section aria-atomic="true" aria-live="polite" className="status-banner" data-tone={status.running ? "warning" : "info"}>
           <strong>{status.running ? "Warning" : "Not running"}</strong>
           <span>{status.error}</span>
         </section>

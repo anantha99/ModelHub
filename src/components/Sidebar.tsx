@@ -1,4 +1,7 @@
-import type { AppPage, NavigationItem } from "../api/types";
+import { useEffect, useState } from "react";
+import { getSystemInfo } from "../api/tauri";
+import type { AppPage, DiskInfo, GpuInfo, NavigationItem, SystemInfo } from "../api/types";
+import { formatBytes } from "../utils/format";
 
 const navigationItems: NavigationItem[] = [
   {
@@ -34,6 +37,34 @@ type SidebarProps = {
 };
 
 export function Sidebar({ activePage, onNavigate }: SidebarProps) {
+  const [systemInfo, setSystemInfo] = useState<SystemInfo | null>(null);
+  const [systemInfoError, setSystemInfoError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    getSystemInfo()
+      .then((info) => {
+        if (cancelled) {
+          return;
+        }
+
+        setSystemInfo(info);
+        setSystemInfoError(null);
+      })
+      .catch(() => {
+        if (cancelled) {
+          return;
+        }
+
+        setSystemInfoError("System info unavailable");
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   return (
     <aside className="sidebar" aria-label="Primary navigation">
       <div className="brand-block">
@@ -52,6 +83,7 @@ export function Sidebar({ activePage, onNavigate }: SidebarProps) {
 
           return (
             <button
+              aria-current={isActive ? "page" : undefined}
               className="nav-item"
               data-active={isActive}
               key={item.id}
@@ -65,10 +97,63 @@ export function Sidebar({ activePage, onNavigate }: SidebarProps) {
         })}
       </nav>
 
+      <SystemInfoCard error={systemInfoError} systemInfo={systemInfo} />
+
       <div className="sidebar-footer">
         <span className="status-dot" aria-hidden="true" />
         <span>App shell ready</span>
       </div>
     </aside>
   );
+}
+
+function SystemInfoCard({
+  error,
+  systemInfo,
+}: {
+  error: string | null;
+  systemInfo: SystemInfo | null;
+}) {
+  const rows = systemInfo
+    ? [
+        { label: "CPU", value: systemInfo.cpu?.name ?? "Unavailable" },
+        { label: "RAM", value: formatBytes(systemInfo.memory.totalBytes, "Unavailable") },
+        { label: "GPU", value: formatGpu(systemInfo.gpus) },
+        { label: "Disk", value: formatDisk(systemInfo.hfCacheDisk) },
+      ]
+    : [{ label: "Status", value: error ?? "Loading" }];
+
+  return (
+    <section className="system-info-card" aria-label="System information" aria-live="polite">
+      <h2>System</h2>
+      <dl>
+        {rows.map((row) => (
+          <div className="system-info-row" key={row.label}>
+            <dt>{row.label}</dt>
+            <dd title={row.value}>{row.value}</dd>
+          </div>
+        ))}
+      </dl>
+    </section>
+  );
+}
+
+function formatGpu(gpus: GpuInfo[]): string {
+  const gpu = gpus[0];
+
+  if (!gpu) {
+    return "Unavailable";
+  }
+
+  const memory = gpu.memoryBytes === null ? "" : ` (${formatBytes(gpu.memoryBytes, "Unknown")})`;
+
+  return `${gpu.name}${memory}`;
+}
+
+function formatDisk(disk: DiskInfo | null): string {
+  if (!disk) {
+    return "Unavailable";
+  }
+
+  return `${formatBytes(disk.availableBytes, "Unknown")} free of ${formatBytes(disk.totalBytes, "Unknown")}`;
 }
