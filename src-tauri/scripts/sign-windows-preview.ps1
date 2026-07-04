@@ -108,6 +108,8 @@ $config = Get-Content -Raw -Path $configPath | ConvertFrom-Json
 $version = $config.version
 $productName = $config.productName
 $installerPath = Join-Path $bundleDir "$productName`_$version`_x64-setup.exe"
+$installerFileName = Split-Path -Leaf $installerPath
+$githubInstallerFileName = $installerFileName.Replace(" ", ".")
 $certificatePath = Join-Path $bundleDir "modelhub-windows-preview-code-signing.cer"
 $releaseNotesPath = Join-Path $bundleDir "RELEASE_NOTES_v$version.md"
 
@@ -139,7 +141,8 @@ $notes = @(
   "",
   "## Assets",
   "",
-  "- Installer: ``$(Split-Path -Leaf $installerPath)``",
+  "- Installer: ``$installerFileName``",
+  "- GitHub asset name may appear as: ``$githubInstallerFileName``",
   "- Public signing certificate: ``$(Split-Path -Leaf $certificatePath)``",
   "",
   "## SHA256",
@@ -165,7 +168,11 @@ $notes = @(
   "- Custom folder scanning still needs full implementation."
 )
 
-Set-Content -Path $releaseNotesPath -Value $notes -Encoding UTF8
+[System.IO.File]::WriteAllLines(
+  $releaseNotesPath,
+  $notes,
+  [System.Text.UTF8Encoding]::new($false)
+)
 
 [PSCustomObject]@{
   Version = $version
