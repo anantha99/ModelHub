@@ -126,6 +126,11 @@ Export-Certificate -Cert $cert -FilePath $certificatePath | Out-Null
 $installerHash = (Get-FileHash $installerPath -Algorithm SHA256).Hash
 $certificateHash = (Get-FileHash $certificatePath -Algorithm SHA256).Hash
 $installerSignature = Get-AuthenticodeSignature $installerPath
+$trustStatus = if ($installerSignature.Status -eq "Valid") {
+  "Trusted on this machine"
+} else {
+  "Signed with the preview self-signed certificate; Windows does not trust this certificate by default"
+}
 
 $notes = @(
   "# ModelHub Windows $version Preview",
@@ -146,10 +151,9 @@ $notes = @(
   "",
   "- Subject: ``$($installerSignature.SignerCertificate.Subject)``",
   "- Thumbprint: ``$($installerSignature.SignerCertificate.Thumbprint)``",
-  "- Signature status on this machine: ``$($installerSignature.Status)``",
-  "- Status message: ``$($installerSignature.StatusMessage)``",
+  "- Trust status: ``$trustStatus``",
   "",
-  "This preview is signed with a self-signed certificate. Windows may still show SmartScreen or Unknown Publisher warnings unless the certificate is explicitly trusted on the user's machine.",
+  "This is not a certificate failure: it is the expected result for a self-signed preview certificate. Windows may still show SmartScreen or Unknown Publisher warnings unless the certificate is explicitly trusted on the user's machine.",
   "",
   "The checksum and thumbprint published with this release help detect corruption or accidental asset mismatches. For stronger trust, verify the certificate thumbprint through an independent channel.",
   "",
@@ -174,6 +178,7 @@ Set-Content -Path $releaseNotesPath -Value $notes -Encoding UTF8
   CertificateExpires = $cert.NotAfter.ToString("u")
   SignatureStatus = $installerSignature.Status.ToString()
   SignatureStatusMessage = $installerSignature.StatusMessage
+  TrustStatus = $trustStatus
   ReleaseNotes = $releaseNotesPath
   SignedArtifacts = $signatures.Count
 } | ConvertTo-Json -Depth 3
