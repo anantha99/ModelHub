@@ -21,7 +21,9 @@ This repository is an early Windows MVP built with Tauri, React, TypeScript, and
 
 ## Current Status
 
-Version `0.1.1` is the first installable Windows preview. It is suitable for local development, demo review, and trusted early users, but it is signed with a self-signed certificate rather than a publicly trusted code-signing certificate.
+Version `0.1.1` is the first installable Windows preview. The source branch and `v0.1.1` tag are pushed, and the Windows installer can be built from this repository. Publishing the installer as a downloadable GitHub Release asset is a separate step and requires GitHub CLI authentication.
+
+This preview is suitable for local development, demo review, and trusted early users, but it is signed with a self-signed certificate rather than a publicly trusted code-signing certificate.
 
 Implemented so far:
 
@@ -51,11 +53,33 @@ Known gaps before a broader public end-user release:
 
 ## Install Preview Build
 
-Download the latest Windows installer from the GitHub Releases page:
+If a GitHub Release has been published, download the latest Windows installer from:
 
 ```text
 https://github.com/anantha99/ModelHub/releases
 ```
+
+If the GitHub Releases page does not show installer assets yet, build the preview installer locally:
+
+```bash
+pnpm install
+pnpm release:windows
+```
+
+The local installer output is:
+
+```text
+src-tauri/target/release/bundle/nsis/ModelHub Windows_0.1.1_x64-setup.exe
+```
+
+Release upload assets are generated beside it:
+
+```text
+src-tauri/target/release/bundle/nsis/modelhub-windows-preview-code-signing.cer
+src-tauri/target/release/bundle/nsis/RELEASE_NOTES_v0.1.1.md
+```
+
+These generated files are ignored by git and should be uploaded to GitHub Releases, not committed.
 
 The `0.1.1` preview installer targets Windows 10/11 x64 and installs for the current user, so it should not require administrator access.
 
@@ -158,6 +182,15 @@ pnpm release:windows:sign
 
 The signing script creates or reuses a `CurrentUser\My` code-signing certificate, exports the public `.cer` file beside the installer, and writes checksum/thumbprint notes for the GitHub Release. It does not commit private key material.
 
+Publish the prepared installer assets after authenticating GitHub CLI:
+
+```bash
+gh auth login
+gh release create v0.1.1 "src-tauri/target/release/bundle/nsis/ModelHub Windows_0.1.1_x64-setup.exe" "src-tauri/target/release/bundle/nsis/modelhub-windows-preview-code-signing.cer" --title "ModelHub Windows v0.1.1 Preview" --notes-file "src-tauri/target/release/bundle/nsis/RELEASE_NOTES_v0.1.1.md" --prerelease
+```
+
+If the release is already created, upload the same assets to the existing `v0.1.1` release instead of creating a new tag.
+
 ## Windows Paths
 
 Default Hugging Face cache resolution order:
@@ -202,7 +235,7 @@ This is an independent Windows prototype inspired by ModelHub. It does not claim
 
 ### 0.1.1
 
-First installable Windows preview release with a current-user NSIS installer, release metadata, MIT licensing, and a repeatable self-signed Authenticode signing script for preview artifacts.
+First installable Windows preview release with a current-user NSIS installer, release metadata, MIT licensing, and a repeatable self-signed Authenticode signing script for preview artifacts. The source tag is pushed; GitHub Release asset upload is a separate publishing step.
 
 ### 0.1.0
 

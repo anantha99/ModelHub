@@ -8,6 +8,7 @@ First installable Windows preview release.
 - Adds release metadata, MIT licensing, and installer-oriented documentation.
 - Hides the extra console window for release builds.
 - Adds a repeatable self-signed Authenticode signing script for preview artifacts; Windows trust warnings may still appear.
+- Generates local installer, public certificate, and release notes assets for GitHub Release upload.
 
 ## 0.1.0 - 2026-07-04
 
