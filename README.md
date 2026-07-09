@@ -1,133 +1,94 @@
 # ModelHub Windows
 
-ModelHub Windows is a Windows desktop prototype inspired by ModelHub. It is a local AI model manager for developers who keep models spread across Hugging Face cache, LM Studio, Ollama, and manually managed folders.
+ModelHub Windows is a desktop model inventory app for Windows developers working with local AI models.
 
-The goal is not to build another chat app. The goal is to make local model storage visible, searchable, and safer to manage on Windows.
+It scans common local model locations, shows what is installed, helps you understand where models live on disk, and gives you safer tools for opening, downloading, and managing model files without digging through cache folders by hand.
 
-## What This Project Is Trying To Do
+[Download Windows Preview](https://github.com/anantha99/ModelHub/releases/latest)
 
-ModelHub Windows aims to provide one calm desktop utility for the full local-model loop:
+## Why ModelHub Windows
 
-1. Scan local model locations on Windows.
-2. Show models from Hugging Face cache, LM Studio, and Ollama in one place.
-3. Search public Hugging Face models.
-4. Inspect model files before downloading.
-5. Download selected files with progress tracking.
-6. Install completed downloads into a Hugging Face-compatible cache layout.
-7. Refresh the local library so the downloaded model appears immediately.
-8. Check local runtime status without requiring runtimes to be installed.
+Local AI models rarely live in one obvious place.
 
-This repository is an early Windows MVP built with Tauri, React, TypeScript, and Rust.
+Hugging Face uses cache folders. LM Studio has its own model directory. Ollama exposes models through a local runtime. Some files are manually downloaded, renamed, or moved over time.
 
-## Current Status
+ModelHub Windows gives developers one calm Windows desktop app for seeing local models, understanding their source, checking runtime status, and taking safe file actions from one place.
 
-Version `0.1.1` is the first installable Windows preview. The source branch and `v0.1.1` tag are pushed, and the Windows installer can be built from this repository. Publishing the installer as a downloadable GitHub Release asset is a separate step and requires GitHub CLI authentication.
+It is not a chat app, inference runtime, or model conversion tool. It is focused on local model visibility and management.
 
-This preview is suitable for local development, demo review, and trusted early users, but it is signed with a self-signed certificate rather than a publicly trusted code-signing certificate.
+## What It Does
 
-Implemented so far:
+- Scans Hugging Face cache models on Windows.
+- Scans LM Studio model folders.
+- Reads locally available Ollama models through the Ollama API.
+- Shows model metadata, file formats, paths, sizes, and source.
+- Searches public Hugging Face models.
+- Lets you inspect model files before downloading.
+- Tracks staged downloads with progress and cancellation.
+- Installs completed downloads into a Hugging Face-compatible cache layout.
+- Opens model folders in Windows Explorer.
+- Uses conservative delete behavior with Recycle Bin support where eligible.
+- Runs as a Windows desktop app with system tray support.
 
-- Tauri v2 Windows desktop shell with system tray support.
-- React/TypeScript app with Local, Explore, Downloads, Runtimes, and Settings pages.
-- Hugging Face cache path resolution using settings, `HF_HUB_CACHE`, `HF_HOME`, and the default Windows cache path.
-- Hugging Face cache scanning with cache folder decoding, snapshot reading, model metadata extraction, and shared-blob-aware deletion boundaries.
-- LM Studio folder scanning with GGUF and model metadata support.
-- Ollama local API scanning and runtime status for `http://localhost:11434`.
-- Hugging Face public search and model details lookup.
-- Staged Hugging Face downloads with live progress events, cancellation, persisted jobs, and restart-safe failure marking.
-- Install completed downloads into Hugging Face-compatible cache folders under `models--org--repo/blobs`, `refs`, and `snapshots`.
-- Symlink-first snapshot creation with copy fallback when Windows symlinks are unavailable.
-- Open model folders in Explorer.
-- Conservative delete flow that moves eligible local models to the Recycle Bin.
-- Settings UI for model paths, tray behavior, scanning, symlink attempts, and safe deletion defaults.
-- Local system information collection for CPU, memory, GPU, and cache disk context.
+## Windows Preview
 
-Known gaps before a broader public end-user release:
+ModelHub Windows is currently available as a Windows Preview for Windows 10/11 x64.
 
-- The installer is self-signed. Windows SmartScreen or browser warnings may still appear.
-- LM Studio server runtime check is still a placeholder; folder scanning works.
-- Hugging Face token storage is not enabled yet, so private/gated models are reported clearly but cannot be downloaded.
-- Pause/resume controls are intentionally disabled until HTTP range resume is implemented.
-- Custom folder scanning is represented in settings and types, but the scanner still needs full implementation.
-- UI polish and broader Windows hardware testing are still in progress.
-
-## Install Preview Build
-
-If a GitHub Release has been published, download the latest Windows installer from:
+Download the latest installer from:
 
 ```text
-https://github.com/anantha99/ModelHub/releases
+https://github.com/anantha99/ModelHub/releases/latest
 ```
 
-If the GitHub Releases page does not show installer assets yet, build the preview installer locally:
+The preview installer is self-signed. Windows SmartScreen or browser warnings may appear because the certificate is not from a public code-signing authority yet. Release checksums and certificate details are published with the release so trusted early users can verify the downloaded installer.
 
-```bash
-pnpm install
-pnpm release:windows
-```
+## Quick Start
 
-The local installer output is:
+1. Install and launch ModelHub Windows.
+2. Open the Local page.
+3. Scan local model locations.
+4. Review discovered models, formats, sizes, and paths.
+5. Open model folders directly in Explorer when needed.
+6. Use Explore to search Hugging Face models.
+7. Select only the files you want to download.
+8. Track downloads from the Downloads page.
+9. Check Ollama and local runtime status from Runtimes.
+10. Adjust cache paths and app behavior in Settings.
 
-```text
-src-tauri/target/release/bundle/nsis/ModelHub Windows_0.1.1_x64-setup.exe
-```
+## Privacy And Safety
 
-Release upload assets are generated beside it:
+ModelHub Windows is local-first.
 
-```text
-src-tauri/target/release/bundle/nsis/modelhub-windows-preview-code-signing.cer
-src-tauri/target/release/bundle/nsis/RELEASE_NOTES_v0.1.1.md
-```
+- No telemetry is included in the preview.
+- Local model paths are not uploaded.
+- Local model metadata is not sent to external services.
+- Hugging Face search uses the public Hugging Face API.
+- Delete actions are conservative and prefer the Recycle Bin.
+- Hugging Face cache deletion avoids shared blob cleanup by default.
+- Hugging Face token storage is deferred until OS credential storage is wired in.
 
-These generated files are ignored by git and should be uploaded to GitHub Releases, not committed.
+## Preview Limitations
 
-The `0.1.1` preview installer targets Windows 10/11 x64 and installs for the current user, so it should not require administrator access.
+The current Windows Preview is intended for local development, demo review, and trusted early users.
 
-Because this preview uses a self-signed certificate, Windows may show SmartScreen or Unknown Publisher warnings. The checksum and certificate thumbprint published with the GitHub release help detect corruption or accidental asset mismatches, but they are not an independent trust anchor by themselves. For stronger trust, verify the certificate thumbprint through a separate channel before running the installer.
+Known limitations:
 
-The installer uses Tauri's WebView2 download bootstrapper. If Microsoft Edge WebView2 Runtime is missing, the installer may request network access and show Microsoft's WebView2 installer prompt.
-
-After launch, closing the main window hides it to the system tray by default. Use the tray menu and choose Quit to fully exit the app.
-
-## Demo Flow
-
-The intended MVP demo is:
-
-1. Launch ModelHub Windows.
-2. Confirm the tray icon appears.
-3. Open Local and scan discovered models.
-4. Open Runtimes and check Ollama status.
-5. Open Explore and search Hugging Face.
-6. Select files from a model details view.
-7. Start a download and watch progress on Downloads.
-8. Install the completed download into the Hugging Face cache.
-9. Return to Local and confirm the installed model appears.
-10. Open the model folder in Explorer.
+- The installer is self-signed, so Windows trust warnings may appear.
+- Hugging Face private and gated model downloads are not enabled yet.
+- Pause and resume controls are disabled until HTTP range resume is implemented.
+- LM Studio folder scanning works, but full LM Studio server runtime checks are still being completed.
+- Custom folder scanning is represented in settings, but full scanner support is still in progress.
+- Broader Windows hardware testing and UI polish are ongoing.
 
 ## Tech Stack
 
 - Tauri v2
 - Rust
-- React 19
+- React
 - TypeScript
 - Vite
 - pnpm
-- Windows 10/11 target platform
-
-## Repository Layout
-
-```text
-src/
-  api/              Tauri command wrappers and shared frontend types
-  components/       Shared React UI components
-  pages/            Local, Explore, Downloads, Runtimes, Settings
-  styles/           Global app styling
-  utils/            Formatting helpers
-src-tauri/
-  src/              Rust commands, scanners, downloads, cache writer, tray
-  capabilities/     Tauri capability configuration
-tests/fixtures/     Scanner fixtures for local unit tests
-```
+- Windows 10/11
 
 ## Development
 
@@ -143,7 +104,7 @@ Run the frontend dev server:
 pnpm dev
 ```
 
-Run the Tauri app in development:
+Run the desktop app in development:
 
 ```bash
 pnpm tauri dev
@@ -164,79 +125,37 @@ cargo clippy -- -D warnings
 cargo test
 ```
 
-Build the Tauri app and NSIS installer:
+Build the Windows preview installer:
 
 ```bash
 pnpm release:windows
 ```
 
-Installer artifacts are written under `src-tauri/target/release/bundle/nsis/`.
-
-The release script builds the NSIS installer, signs packaged executables through Tauri's Windows `signCommand`, signs the final installer, exports the public certificate, and writes release upload notes.
-
-To regenerate only the signing/checksum notes after a successful build:
-
-```bash
-pnpm release:windows:sign
-```
-
-The signing script creates or reuses a `CurrentUser\My` code-signing certificate, exports the public `.cer` file beside the installer, and writes checksum/thumbprint notes for the GitHub Release. It does not commit private key material.
-
-Publish the prepared installer assets after authenticating GitHub CLI:
-
-```bash
-gh auth login
-gh release create v0.1.1 "src-tauri/target/release/bundle/nsis/ModelHub Windows_0.1.1_x64-setup.exe" "src-tauri/target/release/bundle/nsis/modelhub-windows-preview-code-signing.cer" --title "ModelHub Windows v0.1.1 Preview" --notes-file "src-tauri/target/release/bundle/nsis/RELEASE_NOTES_v0.1.1.md" --prerelease
-```
-
-If the release is already created, upload the same assets to the existing `v0.1.1` release instead of creating a new tag.
-
-## Windows Paths
-
-Default Hugging Face cache resolution order:
-
-1. User setting in ModelHub Windows.
-2. `HF_HUB_CACHE`.
-3. `HF_HOME` plus `hub`.
-4. `%USERPROFILE%\.cache\huggingface\hub`.
-
-Default LM Studio model path:
+Installer artifacts are generated under:
 
 ```text
-%USERPROFILE%\.lmstudio\models
+src-tauri/target/release/bundle/nsis/
 ```
 
-Ollama is checked through its local API:
+## Project Status
 
-```text
-http://localhost:11434
-```
+ModelHub Windows is focused on completing the local model management loop:
 
-LM Studio server checks target this endpoint once runtime checks are fully connected:
+1. Scan local models.
+2. Show models from Hugging Face cache, LM Studio, and Ollama.
+3. Search Hugging Face.
+4. Inspect model files.
+5. Download selected files.
+6. Install downloads into a Hugging Face-compatible cache.
+7. Refresh the local library.
+8. Open or safely manage model folders from Windows.
 
-```text
-http://localhost:1234/v1
-```
-
-## Privacy And Safety
-
-- No telemetry is included in the MVP.
-- Local paths and model metadata are not uploaded to external services.
-- Hugging Face public search uses the Hugging Face API.
-- Hugging Face tokens are not stored in plaintext; token support is deferred until OS credential storage is wired in.
-- Delete actions are conservative and use the Recycle Bin.
-- Hugging Face cache deletion is limited to snapshot folders, not shared blobs or full cache roots.
+See `CHANGELOG.md` for release history.
 
 ## Attribution
 
-This is an independent Windows prototype inspired by ModelHub. It does not claim official affiliation with Conscious Engines or the original ModelHub project.
+ModelHub Windows is an independent Windows project inspired by ModelHub. It is not officially affiliated with Conscious Engines or the original ModelHub project.
 
-## Release Notes
+## License
 
-### 0.1.1
-
-First installable Windows preview release with a current-user NSIS installer, release metadata, MIT licensing, and a repeatable self-signed Authenticode signing script for preview artifacts. The source tag is pushed; GitHub Release asset upload is a separate publishing step.
-
-### 0.1.0
-
-Initial Windows MVP source release with desktop shell, tray support, local model scanning, Hugging Face search/details, staged downloads, Hugging Face cache installation, settings, safe deletion, and Ollama runtime checks.
+MIT
