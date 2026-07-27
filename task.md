@@ -17,8 +17,9 @@
 
 Plan: `docs/runtime-serving-plan.md`
 
-13. [ ] Phase 1 — engine binary management, llama-server supervision, ServeManager.
-14. [ ] Phase 2 — local gateway, auth, alias registry, OpenAI-compatible routes.
-15. [ ] Phase 3 — MCP endpoint, tool set, stdio shim, connect snippets.
-16. [ ] Phase 4 — Serve page, per-model serve toggle, connect panel, events.
-17. [ ] Phase 5 — Ollama/LM Studio delegation, capability routing, eviction policy.
+13. [ ] Phase 1 — serving setting, engine detection, assisted install, engine card.
+14. [ ] Phase 2 — llama-server supervision, memory estimates, ServeManager, serve dialog.
+15. [ ] Phase 3 — local gateway, auth, alias registry, OpenAI-compatible routes.
+16. [ ] Phase 4 — MCP endpoint, tool set, continuations, stdio shim, connect snippets.
+17. [ ] Phase 5 — Serve page, per-model serve button, connect panel, events, tray.
+18. [ ] Phase 6 — Ollama/LM Studio delegation, capability routing, eviction policy.
