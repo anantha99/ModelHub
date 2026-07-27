@@ -13,13 +13,14 @@
 11. [x] Refresh Local page after download.
 12. [x] Add safe delete/open folder/copy actions.
 
-## Runtime & Agent Serving (post-MVP)
+## Local Model Connection Layer (post-MVP)
 
 Plan: `docs/runtime-serving-plan.md`
 
-13. [ ] Phase 1 — serving setting, engine detection, assisted install, engine card.
-14. [ ] Phase 2 — llama-server supervision, memory estimates, ServeManager, serve dialog.
-15. [ ] Phase 3 — local gateway, auth, alias registry, OpenAI-compatible routes.
-16. [ ] Phase 4 — MCP endpoint, tool set, continuations, stdio shim, connect snippets.
-17. [ ] Phase 5 — Serve page, per-model serve button, connect panel, events, tray.
-18. [ ] Phase 6 — Ollama/LM Studio delegation, capability routing, eviction policy.
+13. [ ] Phase 1 — RuntimeProvider trait, Ollama/LM Studio adapters, health probes, serving setting.
+14. [ ] Phase 2 — unified catalog, dedup, stable aliases, error taxonomy, per-runtime queue.
+15. [ ] Phase 3 — local gateway, auth, OpenAI-compatible proxy routes.
+16. [ ] Phase 4 — MCP endpoint, tool set, cold-start semantics, continuations, stdio shim.
+17. [ ] Phase 5 — Connect page, runtime badges, connect panel, activity log, events.
+18. [ ] Phase 6 — adopt downloaded models into Ollama/LM Studio.
+19. [ ] Phase 7 — llama.cpp URL provider, capability routing, no-runtime onboarding.

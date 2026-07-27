@@ -1,426 +1,382 @@
-# ModelHub Runtime & Agent Serving — Implementation Plan
+# ModelHub as the Local Model Connection Layer — Implementation Plan
 
 Status: proposal, not yet implemented.
 
-## 1. Goal
+## 1. Positioning
 
-Today ModelHub finds and downloads models. It cannot run them, and nothing
-outside the app can use them.
+ModelHub does not run models. It sits **on top of the runtimes a user already
+has** — Ollama, LM Studio, a llama.cpp server, whatever comes next — and turns
+them into one reliable endpoint that every coding agent can use.
 
-This plan makes a downloaded model usable in one action ("Serve") and makes the
-served model reachable from coding tools — Claude Code, Cline, Continue, Zed,
-aider, Codex CLI — through a single stable local endpoint. A coding agent should
-be able to hand a subtask to a local model the same way it calls any other tool.
+The pitch in one line: *install any local runtime you like; ModelHub is how your
+coding tools reach it.*
 
-Success looks like this:
+This matters because the current situation is bad in a specific way. A developer
+with Ollama and LM Studio installed has two model catalogs, two APIs, two ports,
+two failure modes, and no way to hand a task to a local model from Claude Code
+without hand-rolling something. Every coding tool then re-implements its own
+half-working local-model integration. ModelHub absorbs that once.
 
-1. User enables **Serving** in Settings (off by default — see §3.4).
-2. ModelHub reports whether a llama.cpp engine is installed, and helps install
-   one if not.
-3. User opens Local, picks a downloaded GGUF model, clicks **Serve**, and
-   confirms context size in the dialog that appears.
-4. User clicks **Connect** and copies a one-line `claude mcp add …` command.
-5. Claude Code lists ModelHub's tools and can send a task to the local model.
-6. The same running model answers OpenAI-compatible requests at
-   `http://127.0.0.1:1710/v1` for every other tool.
+What ModelHub owns:
 
-## 2. Scope note against AGENTS.md
+- **Discovery** — which runtimes are installed, running, and what they can serve.
+- **A unified catalog** — one model list across every runtime, deduplicated.
+- **Protocol translation** — MCP for agents, OpenAI-compatible HTTP for editors.
+- **Reliability** — the hard part. See §6.
 
-`AGENTS.md` §1 lists "Inference runtime" and "Plugin system" as out of MVP
-scope, with instructions to confirm before building them. This work was
-explicitly requested as post-MVP, so §1 and §15 should be amended in the same
-change set that lands Phase 1 — otherwise future agents will treat this code as
-scope violation and try to remove it.
+What ModelHub does not own: inference, sampling, quantization, GPU scheduling.
+Those belong to the runtime, and the runtime is better at them.
 
-## 3. Decisions
+## 2. What changed from the previous draft, and why
 
-These four were open questions in the first draft and are now settled. They
-shape the rest of the plan, so they are recorded here rather than in a footnote.
+The earlier version of this plan had ModelHub spawn and supervise its own
+`llama-server` child processes. That is now a deferred fallback at most (§10),
+because it conflicts with the layer positioning: a layer that installs its own
+engine is not a layer, it is a competing runtime with extra steps.
 
-### 3.1 Engine binary: detect first, assist if missing
+Four decisions were settled against the previous draft. Two survive intact, one
+narrows, one is void:
 
-ModelHub does not bundle `llama-server`. It looks for an existing install, and
-only if none is found does it offer to help the user get one. ModelHub never
-downloads an engine silently or as a side effect of another action.
+| Decision | Status now |
+|---|---|
+| `run_task` capped, with an explicit `continue_task` | **Unchanged.** Still exactly right — see §8 |
+| Serving gated behind a settings flag, off by default | **Unchanged.** See §11 |
+| Context size always asked at serve time | **Narrowed.** Only applies where ModelHub issues the load *and* the runtime accepts load-time options. Ollama and LM Studio JIT-load with their own settings; there is nothing to ask in that path. The dialog now appears only on an explicit "Load via ModelHub" action |
+| Detect a llama-server binary, offer an assisted install | **Void as written.** Replaced by runtime discovery (§4). The "help them install" instinct survives, but it now points at Ollama or LM Studio rather than at a bare binary |
 
-Detection order:
+Flagging the narrowed one because it is the least obvious: it was a good answer
+to the question as asked, and the pivot changed the question.
 
-1. User setting `llamaServerPath`.
-2. A previous ModelHub-assisted install under app data.
-3. `llama-server.exe` on `PATH`.
-4. Common install locations (package-manager shims, `%LOCALAPPDATA%\Programs\llama.cpp`).
-
-When detection succeeds, ModelHub runs `llama-server --version` and records it.
-A version too old for the flags in §5 produces a clear warning naming the
-required version, not a confusing runtime failure later.
-
-When detection fails, the Engine card offers two paths, both user-initiated:
-
-- **Install for me** — download a pinned `llama.cpp` release, variant matched to
-  detected hardware (CPU / CUDA / Vulkan), SHA-256 verified, extracted under app
-  data. The pinned tag moves only in a ModelHub release; there is no auto-update.
-- **I'll install it myself** — link to the official release page, name the exact
-  binary to look for, and offer **Browse…** to point at it plus **Re-detect**.
-
-Open sub-task: confirm whether current winget/scoop packages for llama.cpp exist
-and are trustworthy before naming any package manager command in the UI. Do not
-ship a command that has not been verified on a clean Windows machine.
-
-### 3.2 Context size: always asked at serve time
-
-Clicking **Serve** opens a small dialog rather than starting immediately. The
-dialog asks for context size and GPU offload, and shows a live memory estimate
-that updates as those change.
-
-The estimate is computed from fields the metadata scanner already extracts into
-`LocalModelTechnical` — `block_count`, `embedding_length`, `kv_heads`,
-`context_length` — combined with `system_info`'s RAM and GPU numbers. It is an
-approximation of KV-cache cost and must be labelled as one in the UI. It is
-there to stop a user from requesting a context that will not fit, not to be
-exact.
-
-Values are prefilled from the model's declared context (capped to what fits) and
-from the last values used for that model, so a repeat serve is confirm-and-go
-rather than re-entry. The dialog still appears every time, as decided.
-
-### 3.3 `run_task`: capped, with an explicit continue
-
-MCP tool results are single-shot, so an uncapped generation looks like a hang to
-the calling agent and dumps an unbounded result into its context.
-
-`run_task` therefore caps `max_tokens` by default. When output hits the cap it
-returns `finish_reason: "length"` and a `continuation_id`, and a separate
-`continue_task` tool resumes from there. See §7 for the state this requires and
-what it costs.
-
-### 3.4 Serving is off until enabled in Settings
-
-A new `servingEnabled` setting defaults to `false`. Until it is on, no port is
-bound, no engine is started, and the Serve controls are visible but disabled
-with a link to the setting. Turning it off stops the gateway and every served
-model.
-
-This keeps ModelHub a model manager by default and makes becoming a server an
-explicit, revocable choice.
-
-## 4. Core design: route, don't re-implement
-
-ModelHub does **not** implement inference. `llama.cpp`'s `llama-server` already
-exposes an OpenAI-compatible API, and Ollama and LM Studio already run their own
-servers. ModelHub becomes the **router and control plane** in front of them.
+## 3. Architecture
 
 ```
-                 Claude Code            Cline / Continue / Zed / aider
-                      │  MCP                        │  OpenAI API
-                      ▼                             ▼
-              ┌───────────────────────────────────────────┐
-              │        ModelHub gateway  127.0.0.1:1710   │
-              │   /mcp        (MCP streamable HTTP)       │
-              │   /v1/*       (OpenAI-compatible)         │
-              │   bearer token · loopback-only · Origin   │
-              └───────────────┬───────────────────────────┘
-                              │  alias → upstream resolution
-        ┌─────────────────────┼─────────────────────┐
-        ▼                     ▼                     ▼
-  llama-server          Ollama                 LM Studio
-  (ModelHub-owned       (delegated,            (delegated,
-   child process,        :11434)                :1234)
-   ephemeral port)
+   Claude Code        Cline · Continue · Zed · aider · Codex        ModelHub UI
+        │ MCP                       │ OpenAI API                        │
+        ▼                           ▼                                   ▼
+  ┌──────────────────────────────────────────────────────────────────────┐
+  │                  ModelHub connection layer  127.0.0.1:1710           │
+  │  ┌────────────┐  ┌──────────────┐  ┌───────────────────────────────┐ │
+  │  │ MCP server │  │ OpenAI proxy │  │ reliability: health · retry · │ │
+  │  │   /mcp     │  │    /v1/*     │  │ cold start · queue · errors   │ │
+  │  └────────────┘  └──────────────┘  └───────────────────────────────┘ │
+  │              unified catalog · aliases · capability routing          │
+  └────────┬─────────────────┬──────────────────┬────────────────────────┘
+           │ adapter         │ adapter          │ adapter
+           ▼                 ▼                  ▼
+      Ollama :11434     LM Studio :1234    llama.cpp server
+      (already yours)   (already yours)    (bring your own URL)
 ```
 
-Why this shape:
+Every arrow below the layer points at software the user chose and installed.
+ModelHub adds no engine of its own.
 
-- **One endpoint, one token.** Tools configure ModelHub once. Which engine
-  actually hosts a model becomes an implementation detail the user can change
-  without touching their editor config.
-- **Small surface to own.** ModelHub owns process supervision, aliasing, auth,
-  and protocol translation — not sampling, not GGUF parsing, not CUDA.
-- **Ollama/LM Studio become assets, not competitors.** Models already installed
-  there show up in the same list and serve through the same endpoint.
+## 4. Provider adapters
 
-### Why two protocols and not one
+```rust
+pub trait RuntimeProvider: Send + Sync {
+    fn id(&self) -> ProviderId;
+    fn probe(&self) -> ProviderState;                 // installed / running / version
+    fn catalog(&self) -> Result<Vec<ProviderModel>, ProviderError>;
+    fn loaded(&self) -> Result<Vec<LoadedModel>, ProviderError>;
+    fn chat(&self, req: ChatRequest) -> Result<ChatStream, ProviderError>;
+    fn capabilities(&self) -> ProviderCapabilities;   // what this adapter can actually do
+}
+```
 
-They are not redundant — they serve different clients:
+`ProviderCapabilities` exists because the runtimes differ, and the layer must not
+pretend otherwise. What an adapter cannot do, the UI and the MCP tools must
+report as unsupported rather than fail at call time.
 
-| | MCP (`/mcp`) | OpenAI (`/v1`) |
+| | Ollama | LM Studio | llama.cpp server |
+|---|---|---|---|
+| Discovery | `/api/tags`, `/api/show` — **already implemented** in `scanner::ollama` | folder scan + REST API — **already implemented** in `scanner::lmstudio` | single configured URL |
+| Loaded state | `/api/ps` | REST API model state — partly wired already | `/health` |
+| Chat | native `/api/chat` + OpenAI `/v1` | OpenAI `/v1` | OpenAI `/v1` |
+| JIT load on request | yes | yes, recent versions | no — one model per process |
+| Explicit load/unload | `keep_alive` | `lms load` / `lms unload` CLI | out of scope |
+| Load-time context size | `options.num_ctx` | load config | fixed at process start |
+
+Two adapters are already half-built. `scanner::ollama` hits `/api/tags` and
+`/api/show`; `scanner::lmstudio` scans the models folder and enriches from LM
+Studio's REST API, including model state. The adapter work is largely lifting
+that existing code behind the trait, not writing it fresh.
+
+### On wrapping the vendor SDKs
+
+Worth being direct about this, since it was part of the ask. Ollama and LM Studio
+ship JS and Python SDKs; ModelHub's backend is Rust. Using those SDKs means
+bundling a Node or Python runtime inside a Tauri app — a large dependency, a
+large attack surface, and a packaging problem on Windows, in exchange for
+convenience wrappers over HTTP calls the app already makes today.
+
+The recommendation is to talk to the documented HTTP APIs directly from Rust —
+which is what both scanners already do — and to shell out to a runtime's CLI
+(`ollama`, `lms`) only for control-plane operations the HTTP API does not cover,
+when that CLI is present. This achieves the "reuse what is already there" goal
+without inheriting another language runtime.
+
+If the intent was specifically to reuse SDK code rather than SDK convenience,
+that changes the packaging story enough to be worth deciding explicitly. See §14.
+
+## 5. Unified catalog
+
+One model list across every runtime. The problems worth solving here:
+
+- **Deduplication.** `qwen3:4b` in Ollama and `Qwen3-4B-GGUF` in LM Studio are
+  often the same weights. Match on digest where available, then on normalized
+  name plus quantization plus size, and present one entry that lists which
+  runtimes can serve it. Never merge on name alone — quantizations differ.
+- **Normalized metadata.** Context length, parameter size, quantization, and
+  capability flags reported the same way regardless of source. Most of this
+  normalization already exists in `scanner::metadata` and `LocalModel`.
+- **Stable aliases.** The alias is what a coding tool writes into its config, so
+  it must not change when a model gets loaded elsewhere or a runtime restarts.
+  `qwen3-4b-q4_k_m`, persisted, renameable, deduped with a numeric suffix.
+- **Provenance.** Each entry says which runtime will actually answer, so a slow
+  or wrong response is debuggable.
+
+## 6. The reliability layer
+
+This is the part that justifies ModelHub existing, and the part every ad-hoc
+integration gets wrong. "Reliably" was the operative word in the brief.
+
+Local runtimes fail in ways cloud APIs do not:
+
+| Failure | What a naive client does | What ModelHub does |
 |---|---|---|
-| Consumer | Claude Code, Claude Desktop, any MCP host | Cline, Continue, Zed, aider, Codex, OpenAI SDKs |
-| Shape | Tool calls the agent decides to make | Chat completions the editor drives |
-| Use | Orchestration — "delegate this subtask to the 4B" | Substitution — "this editor's model *is* the local model" |
+| Runtime not running | hangs, or a raw connection error | fast-fail with a probe, name the runtime, say how to start it |
+| Model not loaded, cold start 30s+ | looks like a hang; agent gives up or retries into a thundering herd | report `loading` with progress, hold the request, never silently duplicate it |
+| OOM / model too big for VRAM | retries forever into the same wall | classify as terminal, do not retry, report required vs available memory |
+| Context length exceeded | opaque 400 | classify, report the model's real limit and the request's size |
+| Runtime restarted mid-request | dangling request | detect, fail cleanly, mark upstream unhealthy |
+| Two agents hit one runtime at once | queue thrash, model swap storms | serialize per runtime, bounded queue, backpressure |
+| Runtime down but still configured | every catalog call stalls | circuit-break, serve last-known catalog marked stale |
 
-Claude Code does not consume OpenAI-compatible endpoints for its own inference,
-so MCP is the only way to reach it. Most other tools do not speak MCP for
-inference, so `/v1` is the only way to reach them. Both are required.
+Concretely:
 
-## 5. Backend module layout
+- **Health probes** per provider on a short timeout, cached briefly so the
+  catalog never blocks on a dead runtime. The existing scanners already use
+  500ms–short timeouts and treat "not running" as normal status, which is the
+  right instinct to build on.
+- **A normalized error taxonomy** — `RuntimeDown`, `ModelNotFound`,
+  `ModelLoading`, `OutOfMemory`, `ContextExceeded`, `Timeout`, `Cancelled`,
+  `Upstream` — each mapping to an actionable message. Retry policy is a property
+  of the variant, not a global setting: transient ones retry with backoff,
+  terminal ones never do.
+- **Cold-start handling** is the one most worth getting right. A model swap can
+  take 30+ seconds. The MCP tool must return something meaningful in that window
+  rather than appearing hung — see §8.
+- **Per-runtime serialization.** A local runtime with one GPU is not a cloud
+  endpoint. Concurrent requests for different models cause repeated load/unload
+  thrash that is far slower than queueing. ModelHub queues per runtime with a
+  bounded depth and rejects past it rather than growing unboundedly.
+- **Cancellation propagates.** A dropped client request cancels the upstream
+  request; otherwise a cancelled agent leaves a GPU busy for a minute.
+
+## 7. Making ModelHub's own downloads usable
+
+There is a gap the layer positioning creates and must answer: a GGUF ModelHub
+downloaded into the Hugging Face cache is invisible to Ollama and LM Studio. If
+ModelHub does not run models, a downloaded model is unreachable — which would
+gut the feature the app already has.
+
+The answer is **adopt into runtime**: register a downloaded model with a runtime
+the user already has, then serve it through that.
+
+- **Ollama** — generate a Modelfile with `FROM <path-to.gguf>` and run
+  `ollama create <alias>`. Documented, and it makes the model a first-class
+  Ollama model afterwards.
+- **LM Studio** — place or link the GGUF into LM Studio's models directory under
+  the publisher/model layout the scanner already understands, then re-index.
+
+This is a strong fit for the positioning: ModelHub finds and fetches models, then
+hands them to the runtime the user chose. It also means the download manager,
+cache writer, and scanners already built stay valuable rather than becoming
+vestigial.
+
+Symlink-versus-copy applies here exactly as it does in the cache writer, and
+should reuse that logic and its warning behavior rather than reimplementing it.
+
+## 8. MCP surface
+
+Transports: **streamable HTTP** at `/mcp` (preferred), plus a small
+`modelhub-mcp.exe` **stdio shim** for hosts without HTTP transport support. The
+shim holds no logic — it reads endpoint and token from app data and proxies.
+
+```
+claude mcp add --transport http modelhub http://127.0.0.1:1710/mcp \
+  --header "Authorization: Bearer <token>"
+```
+
+### Tools
+
+Deliberately small. An agent facing fifteen tools uses none of them well.
+
+| Tool | Purpose |
+|---|---|
+| `list_models` | Unified catalog: alias, runtime, size, context, capabilities, load state |
+| `run_task` | The main one: `{task, context?, model?, max_tokens?}` → completion |
+| `continue_task` | `{continuation_id, max_tokens?}` → resumes a truncated `run_task` |
+| `list_runtimes` | Which runtimes are installed, running, healthy |
+| `load_model` / `unload_model` | Where the runtime supports it; reports unsupported plainly |
+
+`run_task` is the reason to build this. It lets Claude Code push bulk, cheap, or
+privacy-sensitive work down to a local model — summarize forty files, classify a
+changelog, redact a log — without that content leaving the machine or consuming
+the orchestrator's context. With `model` omitted, ModelHub routes by declared
+capability, current load state, and runtime health, preferring an
+already-loaded model over one that would force a cold swap.
+
+**Cold start inside a tool call.** MCP tool results are single-shot, so a 40s
+model load looks like a hang. `run_task` returns promptly with
+`status: "loading"`, the model, and an estimated wait when a load is required and
+the caller did not opt into waiting; the agent can retry or do other work. With
+`wait: true` it holds, up to a bounded timeout. Silently blocking for an
+unbounded time is the one behavior to avoid — it teaches agents that local models
+are broken.
+
+**Continuations.** `run_task` caps `max_tokens` by default; on truncation it
+returns `finish_reason: "length"` plus a `continuation_id` that `continue_task`
+resumes. The honest costs, unchanged from the previous draft:
+
+- *Re-prefill* — no runtime here exposes a resumable generation handle, so
+  ModelHub holds the messages and generated prefix and re-sends. Prompt/slot
+  caching in the runtime absorbs much of this while the model stays loaded, but
+  a continuation after a busy interval pays full prefill again.
+- *Memory* — the store is bounded by count and TTL, evicted when the model
+  unloads. An unbounded map here is a leak driven by remote callers.
+- *Staleness* — a continuation whose model unloaded or reloaded with different
+  options is refused with a reason, not silently resumed against a different
+  configuration.
+
+Results stay compact: text, finish reason, token counts, and which runtime and
+model answered.
+
+## 9. OpenAI surface
+
+`/v1/models`, `/v1/chat/completions` (streaming and not), `/v1/completions`,
+`/v1/embeddings` where the upstream supports them and a clean 501 where it does
+not. Routing reads `model` from the body, resolves the alias, and proxies to the
+owning provider with the reliability layer in front.
+
+This is what Cline, Continue, Zed, aider, and Codex consume. Claude Code does not
+consume OpenAI endpoints for its own inference, so MCP is the only way to reach
+it — the two surfaces are complementary, not redundant.
+
+Because JIT-loading runtimes handle cold start themselves, an OpenAI request for
+a known-but-unloaded alias can be passed straight through — the 409 the previous
+draft required no longer applies, since there is no dialog to answer.
+
+## 10. Optional, deferred: ModelHub-managed llama.cpp
+
+Kept explicitly out of the main path, recorded so the decision is not relitigated.
+
+If a user has *no* runtime installed, the layer has nothing to stand on. Two
+possible answers: point them at Ollama or LM Studio with a good onboarding
+screen (cheap, consistent with the positioning), or have ModelHub spawn its own
+`llama-server` (expensive — process supervision, Windows Job Objects, GPU memory
+leak risk, binary distribution).
+
+Recommendation: onboarding first. Revisit spawning only if real usage shows
+people stuck with no runtime and unwilling to install one. If it is ever built,
+it becomes just another `RuntimeProvider` behind the same trait, which is why
+the abstraction is worth having from the start.
+
+## 11. Backend layout
 
 ```text
-src-tauri/src/serve/
-  mod.rs              ServeManager — Tauri managed state, mirrors DownloadManager
-  registry.rs         alias → ServedModel {model id, engine, upstream, status}
-  estimate.rs         context/memory estimation from LocalModelTechnical + SystemInfo
-  engine/
-    mod.rs            trait ModelEngine, EngineKind, EngineCapabilities
-    llamacpp.rs       spawn/supervise llama-server, health poll, log capture
-    ollama.rs         delegate to :11434 (reuses scanner::ollama)
-    lmstudio.rs       delegate to :1234/v1
-  binaries.rs         engine detection, version probe, assisted install
+src-tauri/src/link/
+  mod.rs              LinkManager — Tauri managed state, mirrors DownloadManager
+  provider/
+    mod.rs            trait RuntimeProvider, ProviderId, ProviderCapabilities
+    ollama.rs         wraps + extends scanner::ollama; /api/ps, /api/chat
+    lmstudio.rs       wraps + extends scanner::lmstudio; /v1, optional lms CLI
+    llamacpp.rs       user-supplied server URL
+  catalog.rs          unified catalog, dedup, alias assignment
+  health.rs           probes, circuit breaker, cached state
+  reliability.rs      error taxonomy, retry policy, per-runtime queue, cancellation
+  adopt.rs            register a downloaded model into Ollama / LM Studio
   gateway/
     mod.rs            axum server, bind + shutdown lifecycle
     auth.rs           bearer token, loopback bind, Origin allowlist
-    openai.rs         /v1/models, /v1/chat/completions, /v1/completions, /v1/embeddings
+    openai.rs         /v1/* proxy routes
     mcp.rs            /mcp streamable HTTP transport
   mcp/
     mod.rs            JSON-RPC framing, initialize / tools/list / tools/call
     tools.rs          tool schemas + handlers
-    continuations.rs  bounded, TTL'd store backing continue_task
+    continuations.rs  bounded, TTL'd continuation store
 ```
 
-`ServeManager` follows the existing `DownloadManager` pattern exactly:
-`Arc<Mutex<Inner>>`, constructed in `lib.rs` `.setup()`, registered with
-`app.manage()`, injected into commands via `tauri::State`.
+`LinkManager` follows the existing `DownloadManager` pattern: `Arc<Mutex<Inner>>`,
+built in `lib.rs` `.setup()`, registered with `app.manage()`, injected via
+`tauri::State`.
 
-New crate dependencies: `axum`, `tokio` (`rt-multi-thread`, `process`, `signal`),
-`tokio-stream`, `futures-util`, `uuid`, `rand`. `reqwest` needs the `stream`
-feature added for async streaming proxy (the existing `blocking` usage stays as
-is — downloads and scanners are untouched).
+New dependencies: `axum`, `tokio` (`rt-multi-thread`, `process`), `tokio-stream`,
+`futures-util`, `uuid`, `rand`, and the `stream` feature on `reqwest`. The
+existing blocking `reqwest` usage in scanners and downloads stays untouched.
 
-New settings fields: `serving_enabled` (default `false`), `gateway_port`
-(default `1710`), `llama_server_path`, and a per-model map of last-used serve
-options. `AppSettings::sanitized()` and `apply_patch` must handle these; note
-that several existing fields are deliberately force-reset in those functions, so
-the new ones need to be added without disturbing that behavior.
+New settings: `serving_enabled` (default `false`), `gateway_port` (default
+`1710`), per-provider enable flags and base URLs. `AppSettings::sanitized()` and
+`apply_patch` force-reset several existing fields deliberately — new fields must
+be added without disturbing that.
 
-## 6. Engine abstraction
+**Security**, unchanged and non-negotiable: loopback bind only, bearer token
+generated on first enable and stored with a restrictive ACL, `Origin` allowlist
+on `/mcp` against DNS rebinding, token never logged or emitted in events.
 
-```rust
-pub trait ModelEngine: Send + Sync {
-    fn kind(&self) -> EngineKind;
-    fn can_serve(&self, model: &LocalModel) -> Servability;
-    fn start(&self, model: &LocalModel, opts: &ServeOptions) -> Result<Upstream, ServeError>;
-    fn stop(&self, handle: &ServeHandle) -> Result<(), ServeError>;
-    fn health(&self, upstream: &Upstream) -> HealthState;
-}
-```
+## 12. Frontend
 
-`Servability` is deliberately a three-state value — `Yes`, `No { reason }`,
-`Unknown` — because the UI must explain *why* a model has no Serve button.
-
-**Format reality check.** `llama.cpp` serves GGUF only. Safetensors models
-(the majority of HF repos) need vLLM or transformers, neither of which is a
-reasonable Windows dependency today. Those models will report
-`No { reason: "Safetensors models need a Python runtime ModelHub does not
-manage yet." }`. This is a real limitation and the UI must say so plainly
-rather than showing a button that fails.
-
-### llama-server supervision (`llamacpp.rs`)
-
-- Binary comes from `binaries.rs` detection (§3.1); a missing engine is a
-  first-class UI state, not a serve-time error.
-- Launch: `llama-server --model <gguf> --port <ephemeral> --host 127.0.0.1
-  --ctx-size <from dialog> --n-gpu-layers <from dialog> --alias <alias>`.
-- Port: bind `127.0.0.1:0`, read the assigned port, close, hand to the child —
-  with a retry, because that has a race window.
-- Readiness: poll `/health` until ready or timeout; surface stderr on failure
-  instead of a bare exit code.
-- Lifetime: child processes are killed on app exit and on window close. On
-  Windows this needs a Job Object so a crashed ModelHub does not orphan a
-  multi-GB process holding VRAM. Non-negotiable — leaked GPU memory is the
-  worst failure mode here.
-- Concurrency: one loaded model at a time by default, configurable. Serving a
-  second model prompts to evict the first, with the memory numbers shown.
-
-## 7. Gateway
-
-Bind `127.0.0.1:1710` (configurable; 1234 and 11434 are taken by LM Studio and
-Ollama). Nothing binds until `servingEnabled` is on and a model is served.
-
-### OpenAI surface
-
-- `GET /v1/models` — every currently served alias.
-- `POST /v1/chat/completions` — streaming and non-streaming.
-- `POST /v1/completions`, `POST /v1/embeddings` — pass-through where the
-  upstream supports them, clean 501 where it does not.
-
-Routing: read `model` from the request body, resolve the alias in the registry,
-proxy to that upstream.
-
-Note an interaction with §3.2: because context size is always chosen by a human
-at serve time, an OpenAI request naming a *stopped* alias cannot silently start
-it — there would be no one to answer the dialog. It returns a 409 naming the
-alias and stating that the model must be served from ModelHub first. The
-alternative, reusing last-known options to auto-start, would quietly bypass the
-decision the dialog exists to capture.
-
-### Aliases
-
-Aliases are the user-facing model name, so they must be stable and predictable:
-`qwen3-4b-q4_k_m` from `Qwen/Qwen3-4B` + `Q4_K_M`. Lowercased, non-alphanumerics
-collapsed to `-`, deduped with a numeric suffix. Persisted with the served-model
-record so an alias never silently changes under a configured editor. Renameable
-in the UI.
-
-### Auth
-
-- Bearer token generated when serving is first enabled, persisted in app data
-  with a restrictive ACL, rotatable from the UI.
-- Loopback bind only — never `0.0.0.0`, not even behind a setting.
-- `Origin` header allowlist on `/mcp` (loopback origins and absent Origin only).
-  This is the documented DNS-rebinding defense for local MCP HTTP servers; a
-  browser page on any site can otherwise reach a localhost port.
-- Token never logged, never in events, masked in the UI until revealed.
-
-## 8. MCP surface
-
-Two transports, because tools differ:
-
-- **Streamable HTTP** at `/mcp` — served by the running app. Preferred.
-  `claude mcp add --transport http modelhub http://127.0.0.1:1710/mcp --header
-  "Authorization: Bearer <token>"`.
-- **stdio shim** — a small `modelhub-mcp.exe` that speaks stdio MCP and forwards
-  to the HTTP gateway, for hosts without HTTP transport support. It holds no
-  logic; it reads endpoint + token from app data and proxies.
-
-### Tools
-
-Kept deliberately small. An orchestrating agent that sees fifteen tools uses
-none of them well.
-
-| Tool | Purpose |
-|---|---|
-| `list_local_models` | Servable models with alias, size, context, capabilities, state |
-| `start_model` / `stop_model` | Explicit load/unload with memory cost reported |
-| `run_task` | The main one: `{task, context?, model?, max_tokens?}` → completion |
-| `continue_task` | `{continuation_id, max_tokens?}` → resumes a truncated `run_task` |
-| `serving_status` | What is loaded, memory in use, last error |
-
-`run_task` is the feature that justifies the whole design. It lets Claude Code
-push bulk, cheap, or privacy-sensitive work down to a local model — summarize
-forty files, classify a changelog, redact a log — without that content leaving
-the machine or consuming context. When `model` is omitted, ModelHub picks by
-declared capability and current load rather than failing.
-
-`start_model` is subject to §3.2: with no human at the dialog, it starts using
-the last-used options for that model and states which options it used in the
-result. If the model has never been served, it returns an error directing the
-user to serve it once from the app. An agent should not be choosing how much of
-someone's RAM to consume.
-
-### Continuations
-
-`continue_task` requires ModelHub to hold the conversation state, because
-`llama-server` exposes no resumable generation handle. `continuations.rs` stores
-the original messages plus the text generated so far, keyed by `continuation_id`.
-
-The honest costs:
-
-- **Re-prefill.** Continuing re-sends the prompt and the generated prefix
-  upstream. `llama-server`'s slot/prompt caching absorbs much of this when the
-  model is still loaded and the slot has not been reused, but a continuation
-  after a busy interval will pay full prefill again.
-- **Memory.** The store is bounded by entry count and TTL, and entries are
-  evicted when their model stops. An unbounded map here would be a slow leak
-  driven by remote callers.
-- **Staleness.** A continuation whose model has been stopped or re-served with
-  different options is refused with a clear reason rather than silently resumed
-  against a different configuration.
-
-Tool results stay compact — completion text, token counts, finish reason, and
-the model that answered. No transcript dumps into the caller's context.
-
-## 9. Frontend
-
-- **Serve page** (replaces the current Runtimes page, which becomes a section of
-  it): serving on/off state, engine card (detected / missing / assisted install),
-  endpoint, token with reveal/copy/rotate, loaded models with memory use, live
-  request count, recent errors.
-- **Serve dialog**: context size, GPU offload, alias, and a live — explicitly
-  approximate — memory estimate. Prefilled from the model's declared context and
-  the last values used. Shown on every serve.
-- **Local page**: a Serve button per model card. Disabled with the reason where
-  `Servability::No`, and disabled with a link to Settings when serving is off.
-  This is the "select in the models list" entry point.
-- **Connect panel**: copy-ready snippets, generated with the live port and token —
-  `claude mcp add` command, OpenAI base URL + key, Continue/Cline JSON block.
-  Copy buttons, no manual transcription.
-- Events `serve:status_changed`, `serve:model_changed`, `serve:error` drive the
+- **Connect page** (replaces Runtimes): serving on/off, endpoint, token with
+  reveal/copy/rotate, and a card per runtime showing installed/running/healthy,
+  version, model count, and last error.
+- **Local page**: each model shows which runtimes can serve it, with **Adopt
+  into…** where it is downloaded but not registered anywhere. This is the
+  "select it in the model list" entry point.
+- **Connect panel**: copy-ready `claude mcp add` command, OpenAI base URL and
+  key, and Continue/Cline JSON — generated with the live port and token.
+- **Activity**: recent requests with model, runtime, latency, and outcome. Local
+  inference fails often enough that a visible request log is a feature, not
+  debug output.
+- Events `link:runtime_changed`, `link:catalog_changed`, `link:request` drive the
   UI. No polling, per AGENTS.md §6.
-- Tray gets a serving indicator and a stop-all item.
 
-New commands, following existing naming:
-
-```ts
-get_serve_status(): Promise<ServeStatus>
-get_engine_status(): Promise<EngineStatus[]>
-detect_engine(): Promise<EngineStatus>
-install_engine_binary(kind: EngineKind): Promise<EngineStatus>
-set_engine_path(path: string): Promise<EngineStatus>
-get_serve_defaults(modelId: string): Promise<ServeDefaults>
-estimate_serve_memory(input: ServeMemoryInput): Promise<ServeMemoryEstimate>
-serve_model(input: ServeModelInput): Promise<ServedModel>
-stop_served_model(alias: string): Promise<void>
-list_served_models(): Promise<ServedModel[]>
-rename_served_alias(alias: string, next: string): Promise<ServedModel>
-rotate_gateway_token(): Promise<string>
-get_connect_snippets(): Promise<ConnectSnippets>
-```
-
-## 10. Phasing
-
-Each phase is independently shippable and leaves the app working.
+## 13. Phasing
 
 | Phase | Deliverable | Demoable result |
 |---|---|---|
-| 1 | `servingEnabled` setting, `binaries.rs` detection + version probe + assisted install, engine card UI | App reports whether an engine is present and helps get one |
-| 2 | Engine trait, `llamacpp.rs` supervision, `estimate.rs`, `ServeManager`, serve dialog | A GGUF model loads at a chosen context size and answers on its own port |
-| 3 | axum gateway, auth, alias registry, OpenAI routes | `curl` and Cline both talk to `:1710/v1` |
-| 4 | MCP HTTP endpoint, tool set, continuations, stdio shim, connect snippets | Claude Code calls `run_task` and `continue_task` against a local model |
-| 5 | Serve page, per-model button, connect panel, events, tray | Whole loop is mouse-driven |
-| 6 | Ollama + LM Studio delegation engines, capability routing, eviction policy | One endpoint fronts all three backends |
+| 1 | `RuntimeProvider` trait, Ollama + LM Studio adapters lifted from the scanners, health probes, `serving_enabled` setting | One catalog across both runtimes, honest health status |
+| 2 | Unified catalog, dedup, stable aliases, error taxonomy, per-runtime queue | Catalog survives a runtime being down or restarted |
+| 3 | axum gateway, auth, OpenAI proxy routes | `curl` and Cline talk to `:1710/v1`, backed by either runtime |
+| 4 | MCP endpoint, tool set, cold-start semantics, continuations, stdio shim | Claude Code runs `run_task` against a local model |
+| 5 | Connect page, per-model runtime badges, connect panel, activity log, events | Whole loop is mouse-driven |
+| 6 | `adopt.rs` — register downloaded models into Ollama / LM Studio | A ModelHub download becomes runnable without leaving the app |
+| 7 | llama.cpp URL provider, capability routing, no-runtime onboarding | Third runtime, and a good story when none is installed |
 
-Phases 2–4 are the substance; 5 makes it a product; 6 is the aggregation payoff.
+Phases 1–4 are the substance. Phase 6 could move earlier if the download-to-run
+loop matters more than breadth — it is the phase that reconnects the existing
+feature set to the new one.
 
-## 11. Testing
+## 14. Decisions to confirm
 
-Everything below is unit-testable with no network and no model files, which
-matters because CI cannot download a 4 GB GGUF:
+1. **Vendor SDKs vs direct HTTP** (§4). Recommendation: direct HTTP from Rust,
+   optional CLI shell-out for control-plane gaps. Wrapping the JS/Python SDKs
+   means shipping Node or Python inside the app.
+2. **Phase 6 placement.** Adoption is what keeps the download feature alive. Move
+   it ahead of the UI phase?
+3. **Third runtime in v1.** llama.cpp server by URL is nearly free once the trait
+   exists. Jan, vLLM, KoboldCpp are each a small adapter — worth naming which,
+   if any, matter to you.
 
-- Alias generation: collision, unicode, very long repo IDs, stability across restarts.
-- Registry resolution: unknown alias, stopped alias (409 path), duplicate registration.
-- llama-server argument construction from `LocalModel` + `ServeOptions`.
-- Engine detection order and precedence; version-too-old warning; checksum mismatch.
-- Memory estimation from `LocalModelTechnical`, including models missing the
-  fields the estimate needs — it must degrade to "unknown", not to a wrong number.
-- `Servability` decisions per format — GGUF yes, safetensors no with reason.
-- MCP JSON-RPC framing: `initialize`, `tools/list`, malformed request, unknown tool.
-- Continuations: TTL expiry, eviction on model stop, unknown/stale id refused,
-  store bounded under repeated calls.
-- Auth: missing token, wrong token, non-loopback `Origin` rejected.
-- Serving disabled: every serve command refuses cleanly with the same reason.
-- Port allocation retry when the chosen port is taken between probe and spawn.
+## 15. Follow-ups to verify during implementation
 
-Live inference tests stay manual and `#[ignore]`d, per AGENTS.md §14.
-
-## 12. Risks
-
-| Risk | Mitigation |
-|---|---|
-| Orphaned llama-server holding VRAM after a crash | Windows Job Object kills children with the parent; startup sweep for stale ModelHub-owned processes |
-| Local HTTP server reachable from a browser page | Loopback bind + bearer token + Origin allowlist; nothing binds until serving is enabled and a model is served |
-| Users stall at "no engine installed" | Detection covers PATH and common install locations; assisted install is one click; manual path has Browse + Re-detect |
-| Memory estimate is wrong and the user trusts it | Labelled approximate in the UI; degrades to "unknown" when GGUF metadata is incomplete; llama-server's own failure is still surfaced verbatim |
-| Serve dialog friction on every serve | Prefilled from last-used values, so repeat serves are confirm-and-go |
-| Continuation store grows unbounded from remote calls | Bounded entry count, TTL, eviction on model stop |
-| Safetensors models cannot be served | Stated plainly in the UI with the reason; not hidden behind a failing button |
-| Scope creep into a chat app | No chat UI in ModelHub. Serving only. The client is always an external tool |
-| Port collisions | Configurable port, clear error naming the conflicting process |
-
-## 13. Follow-ups to resolve during implementation
-
-1. Verify whether a trustworthy winget/scoop package for llama.cpp exists before
-   naming any package-manager command in the assisted-install UI.
-2. Confirm the pinned `llama.cpp` release tag and the exact asset names for the
-   CPU / CUDA / Vulkan variants, and record the SHA-256 for each.
-3. Measure re-prefill cost of `continue_task` against a loaded model to decide
-   whether the default `max_tokens` cap is set high enough to make continuations
-   rare in practice.
+1. `scanner::lmstudio` queries `/api/v1/models`, but LM Studio's documented REST
+   namespace is `/api/v0`. One of those is wrong or version-dependent, and the
+   adapter depends on it. Verify against a running LM Studio before building on
+   it — this may be a latent bug in the current scanner.
+2. Confirm `/api/ps` response shape for loaded-model state and whether it exposes
+   enough to estimate remaining capacity.
+3. Confirm which LM Studio versions support JIT loading and the REST API, and
+   what the adapter should do on older ones.
+4. Measure real cold-start times for a model swap on a representative machine to
+   set the `run_task` wait timeout and the estimate returned with
+   `status: "loading"`.
