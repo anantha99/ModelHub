@@ -17,10 +17,11 @@
 
 Plan: `docs/runtime-serving-plan.md`
 
-13. [ ] Phase 1 — RuntimeProvider trait, Ollama/LM Studio adapters, health probes, serving setting.
-14. [ ] Phase 2 — unified catalog, dedup, stable aliases, error taxonomy, per-runtime queue.
-15. [ ] Phase 3 — local gateway, auth, OpenAI-compatible proxy routes.
-16. [ ] Phase 4 — MCP endpoint, tool set, cold-start semantics, continuations, stdio shim.
-17. [ ] Phase 5 — Connect page, runtime badges, connect panel, activity log, events.
-18. [ ] Phase 6 — adopt downloaded models into Ollama/LM Studio.
-19. [ ] Phase 7 — llama.cpp URL provider, capability routing, no-runtime onboarding.
+13. [ ] Phase 1 — walking skeleton: provider trait, Ollama adapter, gateway, MCP run_task.
+14. [ ] Phase 2 — reliability core: error taxonomy, health, circuit breaker, queue, cold start.
+15. [ ] Phase 3 — LM Studio adapter, unified catalog, dedup, stable aliases.
+16. [ ] Phase 4 — adopt downloaded models into a runtime.
+17. [ ] Phase 5 — OpenAI-compatible proxy routes with streaming.
+18. [ ] Phase 6 — Connect page, runtime badges, connect panel, activity log, tray lifecycle.
+19. [ ] Phase 7 — continue_task and continuation store, stdio shim.
+20. [ ] Phase 8 — llama.cpp URL provider, capability routing, no-runtime onboarding.
